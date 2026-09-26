@@ -93,8 +93,9 @@ function rms(buf) {
 }
 
 // Короткая проба устройства: пишем ms миллисекунд и меряем уровень.
-// Первые ~30% отбрасываем — это прогрев dshow, там часто пусто/шум.
-function probeDevice(device, ms = 800) {
+// Первые ~40% отбрасываем — это прогрев dshow, там часто пусто/шум. 800мс мало:
+// «медленное» устройство не успевает разогреться и получает заниженный балл.
+function probeDevice(device, ms = 1300) {
   return new Promise((resolve) => {
     let proc;
     try {
@@ -116,7 +117,7 @@ function probeDevice(device, ms = 800) {
     setTimeout(kill, ms);
     proc.on('close', () => {
       const b = Buffer.concat(chunks);
-      const warm = Math.floor((b.length * 0.3) / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE;
+      const warm = Math.floor((b.length * 0.4) / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE;
       resolve(rms(b.subarray(warm)));
     });
   });
@@ -141,6 +142,7 @@ async function resolveDevice(requested) {
       bestRms = level;
       best = d;
     }
+    await new Promise((r) => setTimeout(r, 150)); // дать устройству «остыть» между пробами
   }
   cachedDevice = bestRms >= SIGNAL_RMS ? best : devs[0];
   return cachedDevice;
