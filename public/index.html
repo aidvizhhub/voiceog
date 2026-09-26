@@ -16,6 +16,21 @@
     --white: #ffffff;
     --mono: "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo,
             Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    color-scheme: dark light;
+  }
+
+  /* светлая тема — палитра оттуда же (opencode.ai, prefers-color-scheme: light) */
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #ffffff;
+      --panel: #fafafa;
+      --line: #d9d8d8;
+      --line-2: #d0cfce;
+      --text: #1d1d1f;
+      --bright: #000000;
+      --white: #000000;
+      --muted: #646262;
+    }
   }
   * { box-sizing: border-box; }
   html, body {
