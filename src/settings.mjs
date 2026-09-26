@@ -13,6 +13,8 @@ export const DEFAULTS = {
   hotkey: 'ctrl+alt+v',
   // toggle — нажал, говорю, нажал ещё раз. hold — держу, говорю, отпустил.
   mode: 'toggle',
+  // auto — как в системе, либо принудительно dark/light.
+  theme: 'auto',
 };
 
 export function loadSettings() {
@@ -32,6 +34,7 @@ export function normalize(raw = {}) {
     out.hotkey = formatCombo(parseCombo(raw.hotkey));
   }
   if (raw.mode === 'toggle' || raw.mode === 'hold') out.mode = raw.mode;
+  if (['auto', 'dark', 'light'].includes(raw.theme)) out.theme = raw.theme;
   return out;
 }
 

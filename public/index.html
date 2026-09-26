@@ -5,34 +5,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>voiceog — локальный голосовой ввод</title>
 <link rel="icon" href="data:,">
+<script>
+  // тема сразу, без мигания: берём из localStorage до отрисовки
+  try {
+    var t = localStorage.getItem('voiceog-theme');
+    if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <style>
   :root {
+    /* тёмная — фолбэк для старых браузеров; светлая — через light-dark() */
     --bg: #0c0c0e;
+    --bg: light-dark(#ffffff, #0c0c0e);
     --panel: #131010;
+    --panel: light-dark(#fafafa, #131010);
     --line: #3d3838;
+    --line: light-dark(#d9d8d8, #3d3838);
     --line-2: #4a4545;
+    --line-2: light-dark(#d0cfce, #4a4545);
     --text: #b8b2b2;
+    --text: light-dark(#1d1d1f, #b8b2b2);
     --bright: #f2eded;
+    --bright: light-dark(#000000, #f2eded);
     --muted: #716b6a;
+    --muted: light-dark(#646262, #716b6a);
     --white: #ffffff;
+    --white: light-dark(#000000, #ffffff);
     --mono: "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo,
             Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    color-scheme: dark light;
+    color-scheme: light dark;
   }
-
-  /* светлая тема — палитра оттуда же (opencode.ai, prefers-color-scheme: light) */
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #ffffff;
-      --panel: #fafafa;
-      --line: #d9d8d8;
-      --line-2: #d0cfce;
-      --text: #1d1d1f;
-      --bright: #000000;
-      --white: #000000;
-      --muted: #646262;
-    }
-  }
+  /* форс темы из морды; auto — как в системе (light dark выше) */
+  :root[data-theme="dark"] { color-scheme: dark; }
+  :root[data-theme="light"] { color-scheme: light; }
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
@@ -57,7 +62,19 @@
   }
   .logo { font-weight: 700; font-size: 22px; color: var(--white); letter-spacing: .5px; }
   .logo .dim { color: var(--muted); }
-  nav { display: flex; gap: 26px; font-size: 15px; }
+  nav { display: flex; gap: 26px; font-size: 15px; align-items: center; }
+  .theme { display: flex; gap: 6px; }
+  .theme button {
+    padding: 4px 12px;
+    font-size: 14px;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .theme button:hover { color: var(--text); border-color: var(--line-2); }
+  .theme button.on { color: var(--bright); border-color: var(--text); }
 
   main {
     max-width: 1180px;
@@ -181,6 +198,11 @@
 <header>
   <div class="logo">voice<span class="dim">og</span></div>
   <nav>
+    <span class="theme" id="theme">
+      <button data-theme="auto">авто</button>
+      <button data-theme="dark">тёмная</button>
+      <button data-theme="light">светлая</button>
+    </span>
     <a href="http://127.0.0.1:7777/health" target="_blank" rel="noopener">Health</a>
   </nav>
 </header>
@@ -375,6 +397,29 @@ function showEvdev(s) {
   }
 }
 
+// --- тема ---
+function applyTheme(t) {
+  if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  try { localStorage.setItem('voiceog-theme', t); } catch (e) {}
+  for (const b of document.querySelectorAll('#theme button')) {
+    b.classList.toggle('on', b.dataset.theme === t);
+  }
+}
+
+function setTheme(t) {
+  applyTheme(t);
+  fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ theme: t }),
+  }).catch(() => {});
+}
+
+for (const b of document.querySelectorAll('#theme button')) {
+  b.addEventListener('click', () => setTheme(b.dataset.theme));
+}
+
 async function loadSettings() {
   try {
     const r = await fetch('/api/settings');
@@ -383,6 +428,7 @@ async function loadSettings() {
     const radio = document.querySelector('input[name=mode][value=' + s.mode + ']');
     if (radio) radio.checked = true;
     showEvdev(s);
+    applyTheme(s.theme || 'auto');
     setMsg.textContent = s.mode === 'hold' ? 'режим: удержание' : 'режим: переключатель';
   } catch (e) {
     setMsg.textContent = 'не прочитал настройки: ' + e.message;

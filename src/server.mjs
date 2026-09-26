@@ -123,6 +123,7 @@ function settingsState() {
   return {
     hotkey: settings.hotkey,
     mode: settings.mode,
+    theme: settings.theme,
     evdev: evdevAvailable,
     devices: hotkey ? hotkey.devices : [],
   };
@@ -271,6 +272,7 @@ const server = http.createServer(async (req, res) => {
       // битые значения не принимаем, чтоб не сбросить текущие
       if (patch.hotkey != null && !isValidCombo(patch.hotkey)) delete patch.hotkey;
       if (patch.mode != null && patch.mode !== 'toggle' && patch.mode !== 'hold') delete patch.mode;
+      if (patch.theme != null && !['auto', 'dark', 'light'].includes(patch.theme)) delete patch.theme;
       const next = saveSettings({ ...settings, ...patch });
       const hotkeyChanged = next.hotkey !== settings.hotkey;
       const modeChanged = next.mode !== settings.mode;
