@@ -6,11 +6,14 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   createRecognizer,
   transcribePcm16,
   transcribeWav,
+  transcribeSamples,
+  pcm16ToFloat32,
   modelInfo,
 } from './stt.mjs';
 import { Recorder } from './recorder.mjs';
@@ -79,6 +82,70 @@ function transcribeBuffer(buf) {
   return isWav ? transcribeWav(recognizer, buf) : transcribePcm16(recognizer, buf);
 }
 
+// --- Whisper-совместимый вход (для Telegram-бота и прочих клиентов) ---
+
+// Минимальный разбор multipart/form-data: достаём первый файл-парт.
+function firstFilePart(buf, contentType) {
+  const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType || '');
+  const boundary = m ? (m[1] || m[2]).trim() : null;
+  if (!boundary) return null;
+
+  const sep = Buffer.from(`--${boundary}`);
+  let start = buf.indexOf(sep);
+  while (start !== -1) {
+    const next = buf.indexOf(sep, start + sep.length);
+    if (next === -1) break;
+    let part = buf.subarray(start + sep.length, next);
+    if (part[0] === 13 && part[1] === 10) part = part.subarray(2); // срезаем CRLF
+    const headerEnd = part.indexOf('\r\n\r\n');
+    if (headerEnd !== -1) {
+      const headers = part.subarray(0, headerEnd).toString('latin1');
+      if (/filename=/i.test(headers)) {
+        let body = part.subarray(headerEnd + 4);
+        if (body.length >= 2 && body[body.length - 2] === 13 && body[body.length - 1] === 10) {
+          body = body.subarray(0, body.length - 2);
+        }
+        return body;
+      }
+    }
+    start = next;
+  }
+  return null;
+}
+
+// Любой аудиоформат (ogg/opus/mp3/m4a/…) → PCM s16le 16 кГц моно через ffmpeg.
+function toPcm16k(buf) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(
+      'ffmpeg',
+      ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-f', 's16le', '-ac', '1', '-ar', '16000', 'pipe:1'],
+      { stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+    const out = [];
+    const err = [];
+    p.stdout.on('data', (d) => out.push(d));
+    p.stderr.on('data', (d) => err.push(d));
+    p.on('error', reject);
+    p.on('close', (code) =>
+      code === 0
+        ? resolve(Buffer.concat(out))
+        : reject(new Error('ffmpeg: ' + Buffer.concat(err).toString().slice(0, 200))),
+    );
+    p.stdin.end(buf);
+  });
+}
+
+// Любой вход → текст. Контейнеры гоняем через ffmpeg, иначе считаем сырым PCM 16k.
+async function transcribeAny(buf) {
+  if (buf.toString('latin1', 0, 4) === 'RIFF') return transcribeWav(recognizer, buf);
+  try {
+    const pcm = await toPcm16k(buf);
+    return transcribeSamples(recognizer, pcm16ToFloat32(pcm));
+  } catch {
+    return transcribePcm16(recognizer, buf);
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${HOST}`);
 
@@ -126,6 +193,26 @@ const server = http.createServer(async (req, res) => {
         recorder.start();
         json(res, 200, { recording: true });
       }
+      return;
+    }
+
+    // Whisper-совместимо: POST /v1/audio/transcriptions (multipart) → {"text": "..."}
+    // Сюда смотрит Telegram-бот (STT_API_URL) — и голосовые распознаёт наш Parakeet.
+    if (req.method === 'POST' && url.pathname === '/v1/audio/transcriptions') {
+      const raw = await readBody(req);
+      const ct = req.headers['content-type'] || '';
+      let data = raw;
+      if (/multipart\/form-data/i.test(ct)) {
+        const part = firstFilePart(raw, ct);
+        if (part) data = part;
+      }
+      if (!data || data.length < 4) {
+        json(res, 400, { error: 'нет аудио' });
+        return;
+      }
+      const t = Date.now();
+      const text = await transcribeAny(data);
+      json(res, 200, { text, ms: Date.now() - t });
       return;
     }
 

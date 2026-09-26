@@ -89,6 +89,19 @@ npm start              # сервер
 - `GET /state` — `{recording, inject, model}`
 - `POST /toggle` — старт/стоп записи; на стопе отдаёт `{recording:false, text, ms, injected}`
 - `POST /transcribe` — принять WAV или сырой PCM 16 кГц моно, вернуть `{text, ms}`
+- `POST /v1/audio/transcriptions` — **Whisper-совместимо** (multipart `file`), любой формат
+  (ogg/opus/mp3/m4a/wav) → `{text}`. Сюда можно направить любой клиент, ждущий Whisper-API.
+
+### Локальный STT для Telegram-бота
+
+VOICEog умеет прикинуться Whisper-API — тогда голосовые в Телеге распознаются локально,
+без облака. В `.env` бота:
+
+```
+STT_API_URL=http://127.0.0.1:7777/v1
+STT_API_KEY=local
+STT_MODEL=parakeet-tdt-0.6b-v3
+```
 
 ## Проверка без браузера
 
