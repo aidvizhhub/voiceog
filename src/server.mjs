@@ -22,6 +22,7 @@ import { isValidCombo } from './keys.mjs';
 // (ffmpeg/Set-Clipboard/uiohook). Ядро про платформу не знает.
 import {
   Recorder,
+  listAudioDevices,
   injectText,
   injectionStatus,
   HotkeyListener,
@@ -65,6 +66,7 @@ const NO_INJECT = process.env.VOICEOG_NO_INJECT === '1';
 // --- настройки и активация (хоткей) ---
 
 let settings = loadSettings();
+recorder.setDevice(settings.audioDevice);
 let hotkey = null; // evdev-слушатель
 let evdevAvailable = false;
 
@@ -137,6 +139,7 @@ function settingsState() {
     theme: settings.theme,
     hotkeyActive: evdevAvailable,
     backend: hotkeyBackend,
+    audioDevice: settings.audioDevice,
     devices: hotkey ? hotkey.devices : [],
   };
 }
@@ -273,6 +276,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Список микрофонов (Windows) — для выбора в морде.
+    if (req.method === 'GET' && url.pathname === '/api/devices') {
+      json(res, 200, { devices: await listAudioDevices(), current: recorder.device || settings.audioDevice || '' });
+      return;
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/settings') {
       const body = await readBody(req);
       let patch = {};
@@ -285,10 +294,12 @@ const server = http.createServer(async (req, res) => {
       if (patch.hotkey != null && !isValidCombo(patch.hotkey)) delete patch.hotkey;
       if (patch.mode != null && patch.mode !== 'toggle' && patch.mode !== 'hold') delete patch.mode;
       if (patch.theme != null && !['auto', 'dark', 'light'].includes(patch.theme)) delete patch.theme;
+      if (patch.audioDevice != null && typeof patch.audioDevice !== 'string') delete patch.audioDevice;
       const next = saveSettings({ ...settings, ...patch });
       const hotkeyChanged = next.hotkey !== settings.hotkey;
       const modeChanged = next.mode !== settings.mode;
       settings = next;
+      recorder.setDevice(settings.audioDevice);
       if (hotkeyChanged) startHotkey();
       if (hotkeyChanged || modeChanged) await applyFallbackBinding();
       json(res, 200, settingsState());

@@ -1,6 +1,6 @@
 // platform/win/index.mjs — Windows-адаптер VOICEog.
 
-export { Recorder } from './recorder.mjs';
+export { Recorder, listAudioDevices } from './recorder.mjs';
 export { injectText, injectionStatus } from './inject.mjs';
 export { HotkeyListener } from './hotkey.mjs';
 

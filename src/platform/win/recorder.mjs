@@ -1,8 +1,14 @@
 // platform/win/recorder.mjs — запись с микрофона на Windows через ffmpeg (dshow).
 //
 // ffmpeg кладёт сырой PCM 16 кГц моно на stdout — ровно тот формат, что ждёт
-// распознаватель. Устройство определяем сами (первое аудио в списке dshow),
-// если не задано VOICEOG_AUDIO_DEVICE.
+// распознаватель.
+//
+// Устройство выбирается так:
+//   1) VOICEOG_AUDIO_DEVICE (переменная окружения) — силой;
+//   2) устройство из настроек (выбор в морде);
+//   3) авто: перебираем аудио-устройства и берём то, где есть реальный сигнал
+//      (иначе легко нарваться на «мёртвый» микрофон и писать тишину);
+//   4) если сигнала нет нигде — первое из списка.
 
 import { spawn } from 'node:child_process';
 import ffmpegStatic from 'ffmpeg-static';
@@ -10,12 +16,16 @@ import ffmpegStatic from 'ffmpeg-static';
 const FFMPEG = process.env.VOICEOG_FFMPEG || ffmpegStatic || 'ffmpeg';
 const FIXED_DEVICE = process.env.VOICEOG_AUDIO_DEVICE || null;
 
+const SAMPLE_RATE = 16000;
+const CHANNELS = 1;
+const BYTES_PER_SAMPLE = 2;
+
 let cachedDevice;
 
 // Список аудио-устройств DirectShow через ffmpeg. Новые сборки помечают тип в
 // строке — «Имя» (audio); старые печатают секцию «DirectShow audio devices».
-// Поддерживаем оба формата, альтернативные имена (@device_…) пропускаем.
-function listAudioDevices() {
+// Альтернативные имена (@device_…) пропускаем.
+export function listAudioDevices() {
   return new Promise((resolve) => {
     let proc;
     try {
@@ -35,13 +45,11 @@ function listAudioDevices() {
       const devs = [];
       let inAudio = false;
       for (const line of err.split(/\r?\n/)) {
-        // Новый ffmpeg: без заголовков, тип помечен в конце строки — "Имя" (audio).
         const typed = /"([^"]+)"\s*\((audio|video|none)\)\s*$/i.exec(line);
         if (typed) {
           if (typed[2].toLowerCase() === 'audio') devs.push(typed[1]);
           continue;
         }
-        // Старый ffmpeg: секции с заголовками.
         if (/DirectShow audio devices/i.test(line)) {
           inAudio = true;
           continue;
@@ -54,25 +62,97 @@ function listAudioDevices() {
         const m = /"([^"]+)"/.exec(line);
         if (m && !m[1].startsWith('@')) devs.push(m[1]);
       }
-      // уникальные, в порядке появления
       resolve([...new Set(devs)]);
     });
   });
 }
 
-async function resolveDevice() {
+function recordArgs(device) {
+  return [
+    '-hide_banner', '-loglevel', 'error',
+    '-f', 'dshow',
+    '-audio_buffer_size', '50',
+    '-i', `audio=${device}`,
+    '-f', 's16le',
+    '-acodec', 'pcm_s16le',
+    '-ac', String(CHANNELS),
+    '-ar', String(SAMPLE_RATE),
+    '-',
+  ];
+}
+
+function rms(buf) {
+  const n = Math.floor(buf.length / BYTES_PER_SAMPLE);
+  if (!n) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const s = buf.readInt16LE(i * BYTES_PER_SAMPLE);
+    sum += s * s;
+  }
+  return Math.sqrt(sum / n);
+}
+
+// Короткая проба устройства: пишем ms миллисекунд и меряем уровень.
+function probeDevice(device, ms = 500) {
+  return new Promise((resolve) => {
+    let proc;
+    try {
+      proc = spawn(FFMPEG, recordArgs(device), { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+    } catch {
+      resolve(0);
+      return;
+    }
+    const chunks = [];
+    proc.stdout.on('data', (d) => chunks.push(d));
+    proc.on('error', () => resolve(0));
+    const kill = () => {
+      try {
+        proc.kill();
+      } catch {
+        /* пусто */
+      }
+    };
+    setTimeout(kill, ms);
+    proc.on('close', () => resolve(rms(Buffer.concat(chunks))));
+  });
+}
+
+// Порог «есть звук»: тишина даёт ~0–1, живой микрофон — сотни.
+const SIGNAL_RMS = 50;
+
+async function resolveDevice(requested) {
   if (FIXED_DEVICE) return FIXED_DEVICE;
+  if (requested) return requested;
   if (cachedDevice) return cachedDevice;
+
   const devs = await listAudioDevices();
-  cachedDevice = devs[0] || null;
+  if (!devs.length) return null;
+
+  let best = null;
+  let bestRms = -1;
+  for (const d of devs) {
+    const level = await probeDevice(d);
+    if (level > bestRms) {
+      bestRms = level;
+      best = d;
+    }
+  }
+  cachedDevice = bestRms >= SIGNAL_RMS ? best : devs[0];
   return cachedDevice;
 }
 
 export class Recorder {
-  constructor() {
+  constructor(device = null) {
     this.proc = null;
     this.chunks = [];
     this.device = null;
+    this.requested = device || null;
+  }
+
+  // Сменить выбранное устройство (из настроек). Пусто — снова авто-выбор.
+  setDevice(name) {
+    this.requested = name || null;
+    cachedDevice = undefined;
   }
 
   get recording() {
@@ -82,26 +162,15 @@ export class Recorder {
   async start() {
     if (this.proc) return false;
 
-    const device = await resolveDevice();
+    const device = await resolveDevice(this.requested);
     if (!device) return false; // нет микрофона — старт не состоялся
 
     this.chunks = [];
     this.device = device;
-    const proc = spawn(
-      FFMPEG,
-      [
-        '-hide_banner', '-loglevel', 'error',
-        '-f', 'dshow',
-        '-audio_buffer_size', '50',
-        '-i', `audio=${device}`,
-        '-f', 's16le',
-        '-acodec', 'pcm_s16le',
-        '-ac', '1',
-        '-ar', '16000',
-        '-',
-      ],
-      { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
-    );
+    const proc = spawn(FFMPEG, recordArgs(device), {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
+    });
 
     this.proc = proc;
     proc.stdout.on('data', (d) => this.chunks.push(d));
