@@ -9,12 +9,14 @@
 // Никакую логику ядра это не меняет — только точки входа.
 
 import * as posix from './posix.mjs';
-import * as win from './win/index.mjs';
 
 export const IS_WINDOWS = process.platform === 'win32';
 export const PLATFORM = process.platform;
 
-const impl = IS_WINDOWS ? win : posix;
+// win/* — только про Windows и тянет нативный uiohook-napi. Грузим его
+// динамически, лишь когда мы действительно на win32: на Linux модуль даже
+// не загружается (top-level await резолвит импорт до отдачи экспортов).
+const impl = IS_WINDOWS ? await import('./win/index.mjs') : posix;
 
 export const Recorder = impl.Recorder;
 export const injectText = impl.injectText;
