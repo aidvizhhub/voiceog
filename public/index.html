@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VOICEog</title>
+<style>
+  :root {
+    --bg: #0b0f0c;
+    --panel: #131a15;
+    --line: #243026;
+    --green: #7dd35f;
+    --green-dim: #4a7a3a;
+    --text: #e6efe7;
+    --muted: #8a9a8d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(1200px 600px at 50% -10%, #16211a 0%, var(--bg) 60%);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  main { width: 100%; max-width: 720px; }
+  h1 { margin: 0; font-size: 30px; letter-spacing: .5px; }
+  h1 span { color: var(--green); }
+  .sub { color: var(--muted); margin: 6px 0 28px; font-size: 14px; }
+  .rec {
+    width: 100%;
+    padding: 34px 20px;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    background: linear-gradient(180deg, #1b271e, #141c16);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    cursor: pointer;
+    transition: transform .08s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .rec:hover { border-color: var(--green-dim); }
+  .rec:active { transform: scale(.995); }
+  .rec.on {
+    border-color: var(--green);
+    box-shadow: 0 0 0 1px var(--green), 0 0 30px -6px var(--green);
+    background: linear-gradient(180deg, #22321f, #16210f);
+  }
+  .status {
+    margin: 14px 2px;
+    min-height: 22px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .status.err { color: #ff9d8a; }
+  textarea {
+    width: 100%;
+    min-height: 220px;
+    resize: vertical;
+    padding: 16px;
+    font: 17px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--green-dim); }
+  .row { display: flex; gap: 10px; margin-top: 12px; }
+  .row button {
+    padding: 9px 16px;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .row button:hover { border-color: var(--green-dim); }
+  .dot { color: var(--green); }
+</style>
+</head>
+<body>
+<main>
+  <h1>VOICE<span>og</span></h1>
+  <p class="sub"><span class="dot">●</span> локально • Parakeet TDT 0.6B v3 INT8 • без облака</p>
+
+  <button id="rec" class="rec">🎙 <span id="recLabel">Нажми и говори</span></button>
+  <div id="status" class="status">Готов</div>
+
+  <textarea id="out" placeholder="Тут появится распознанный текст..."></textarea>
+
+  <div class="row">
+    <button id="copy">Копировать</button>
+    <button id="clear">Очистить</button>
+  </div>
+</main>
+
+<script>
+const btn = document.getElementById('rec');
+const label = document.getElementById('recLabel');
+const statusEl = document.getElementById('status');
+const out = document.getElementById('out');
+
+let recorder = null;
+let chunks = [];
+let stream = null;
+let recording = false;
+
+function setStatus(text, isErr) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle('err', !!isErr);
+}
+
+function ui(on) {
+  btn.classList.toggle('on', on);
+  label.textContent = on ? 'Идёт запись… жми чтобы стоп' : 'Нажми и говори';
+}
+
+async function start() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    });
+    chunks = [];
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    recorder.onstop = onStop;
+    recorder.start();
+    recording = true;
+    ui(true);
+    setStatus('Слушаю…');
+  } catch (e) {
+    setStatus('Нет доступа к микрофону: ' + e.message, true);
+  }
+}
+
+function stop() {
+  if (!recorder) return;
+  recording = false;
+  ui(false);
+  setStatus('Распознаю…');
+  recorder.stop();
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+}
+
+async function onStop() {
+  try {
+    const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+    const ab = await blob.arrayBuffer();
+
+    const ac = new AudioContext();
+    const decoded = await ac.decodeAudioData(ab.slice(0));
+    await ac.close();
+
+    // Пересэмплируем в 16 кГц моно через OfflineAudioContext.
+    const TARGET = 16000;
+    const frames = Math.max(1, Math.ceil(decoded.duration * TARGET));
+    const off = new OfflineAudioContext(1, frames, TARGET);
+    const src = off.createBufferSource();
+    src.buffer = decoded;
+    src.connect(off.destination);
+    src.start();
+    const rendered = await off.startRendering();
+    const f32 = rendered.getChannelData(0);
+
+    const pcm = new Int16Array(f32.length);
+    for (let i = 0; i < f32.length; i++) {
+      const s = Math.max(-1, Math.min(1, f32[i]));
+      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+
+    const resp = await fetch('/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: pcm.buffer,
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+
+    const text = (data.text || '').trim();
+    if (text) {
+      out.value = out.value.trim() ? out.value.replace(/\s*$/, '') + '\n' + text : text;
+    }
+    setStatus(text ? ('Готово • ' + data.ms + ' мс') : 'Тишина — ничего не разобрал');
+  } catch (e) {
+    setStatus('Ошибка: ' + e.message, true);
+  }
+}
+
+btn.addEventListener('click', () => (recording ? stop() : start()));
+
+document.getElementById('clear').addEventListener('click', () => { out.value = ''; setStatus('Готов'); });
+
+document.getElementById('copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(out.value);
+    setStatus('Скопировано');
+  } catch (e) {
+    setStatus('Не скопировалось: ' + e.message, true);
+  }
+});
+</script>
+</body>
+</html>

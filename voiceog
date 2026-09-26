@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Запуск VOICEog и управление им.
+#
+#   ./voiceog          — старт сервера (ставит зависимости и модель при надобности)
+#   ./voiceog toggle   — старт/стоп записи (для глобального хоткея)
+#   ./voiceog status   — состояние (пишет ли, готова ли вставка)
+#
+set -euo pipefail
+cd "$(dirname "$0")"
+
+PORT="${VOICEOG_PORT:-7777}"
+BASE="http://127.0.0.1:$PORT"
+
+case "${1:-}" in
+  toggle)
+    curl -s -X POST "$BASE/toggle"; echo
+    exit 0
+    ;;
+  status)
+    curl -s "$BASE/state"; echo
+    exit 0
+    ;;
+esac
+
+# нативный аддон sherpa-onnx тянется из node_modules — даём ему путь
+case "$(uname -m)" in
+  x86_64) LIB="sherpa-onnx-linux-x64" ;;
+  aarch64) LIB="sherpa-onnx-linux-arm64" ;;
+  *) LIB="sherpa-onnx-linux-$(uname -m)" ;;
+esac
+if [ -d "node_modules/$LIB" ]; then
+  export LD_LIBRARY_PATH="$PWD/node_modules/$LIB:${LD_LIBRARY_PATH:-}"
+fi
+
+if [ ! -d "node_modules/sherpa-onnx-node" ]; then
+  echo "[voiceog] ставлю зависимости..."
+  npm install
+fi
+
+if [ ! -f "models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/tokens.txt" ]; then
+  echo "[voiceog] модели нет — качаю..."
+  bash scripts/download-model.sh
+fi
+
+exec node src/server.mjs "$@"

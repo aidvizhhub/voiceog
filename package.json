@@ -1,0 +1,14 @@
+{
+  "name": "voiceog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Мини-локальный голосовой ввод: одна кнопка → текст. Parakeet TDT 0.6B v3 INT8 через sherpa-onnx. Без облака.",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "model": "bash scripts/download-model.sh"
+  },
+  "dependencies": {
+    "sherpa-onnx-node": "^1.13.2"
+  }
+}

@@ -1,0 +1,155 @@
+// server.mjs — крошечный локальный сервер VOICEog.
+// Отдаёт страницу с кнопкой, /transcribe для браузера и /toggle для глобального
+// хоткея (запись идёт на стороне демона, готовый текст вставляется в активное окно).
+// Слушает только 127.0.0.1 — наружу не торчит.
+
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  createRecognizer,
+  transcribePcm16,
+  transcribeWav,
+  modelInfo,
+} from './stt.mjs';
+import { Recorder } from './recorder.mjs';
+import { injectText, injectionStatus } from './inject.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..');
+const INDEX = path.join(ROOT, 'public', 'index.html');
+
+const PORT = Number(process.env.VOICEOG_PORT || 7777);
+const HOST = process.env.VOICEOG_HOST || '127.0.0.1';
+const MAX_BODY = 64 * 1024 * 1024; // 64 МБ аудио — с запасом
+
+const info = modelInfo();
+if (!info.ok) {
+  console.error(`[voiceog] модель не готова: ${info.dir}`);
+  console.error(`[voiceog] нет файлов: ${info.missing.join(', ')}`);
+  console.error('[voiceog] скачай модель: npm run model');
+  process.exit(1);
+}
+
+console.log(`[voiceog] гружу модель ${info.name} ...`);
+const t0 = Date.now();
+const recognizer = createRecognizer();
+console.log(`[voiceog] модель готова за ${((Date.now() - t0) / 1000).toFixed(1)} с`);
+
+const inject = injectionStatus();
+console.log(
+  `[voiceog] вставка в окно: ${inject.ready ? 'ok (ydotool + wl-copy)' : 'НЕ готова — нет ' + (!inject.ydotool ? 'ydotool ' : '') + (!inject.wlCopy ? 'wl-copy' : '')}`,
+);
+
+const recorder = new Recorder();
+const NO_INJECT = process.env.VOICEOG_NO_INJECT === '1';
+
+function json(res, code, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(code, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > MAX_BODY) {
+        reject(new Error('аудио слишком большое'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+// WAV или сырой PCM 16 кГц — разбираем по факту.
+function transcribeBuffer(buf) {
+  if (!buf || buf.length < 4) return '';
+  const isWav = buf.toString('latin1', 0, 4) === 'RIFF';
+  return isWav ? transcribeWav(recognizer, buf) : transcribePcm16(recognizer, buf);
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${HOST}`);
+
+  try {
+    if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+      const html = fs.readFileSync(INDEX);
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end(html);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/health') {
+      json(res, 200, { ok: true, model: info.name });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/state') {
+      json(res, 200, {
+        recording: recorder.recording,
+        inject: injectionStatus(),
+        model: info.name,
+      });
+      return;
+    }
+
+    // Глобальный хоткей: первый вызов — старт записи, второй — стоп + расшифровка + вставка.
+    if (req.method === 'POST' && url.pathname === '/toggle') {
+      if (recorder.recording) {
+        const t = Date.now();
+        const buf = await recorder.stop();
+        const text = transcribeBuffer(buf);
+        const ms = Date.now() - t;
+
+        let injected = null;
+        if (text && !NO_INJECT) injected = await injectText(text);
+        if (text) {
+          console.log(`[voiceog] → ${text}${injected && injected.ok ? '  [вставлено]' : ''}`);
+        }
+
+        json(res, 200, { recording: false, text, ms, injected });
+      } else {
+        recorder.start();
+        json(res, 200, { recording: true });
+      }
+      return;
+    }
+
+    // Браузерный путь: готовый PCM/WAV прислали сюда.
+    if (req.method === 'POST' && url.pathname === '/transcribe') {
+      const body = await readBody(req);
+      if (!body || body.length < 4) {
+        json(res, 400, { error: 'пустое аудио' });
+        return;
+      }
+      const t = Date.now();
+      const isWav = body.toString('latin1', 0, 4) === 'RIFF';
+      const text = transcribeBuffer(body);
+      json(res, 200, { text, ms: Date.now() - t, format: isWav ? 'wav' : 'pcm16' });
+      return;
+    }
+
+    json(res, 404, { error: 'не найдено' });
+  } catch (e) {
+    json(res, 500, { error: String(e && e.message ? e.message : e) });
+  }
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`[voiceog] слушаю http://${HOST}:${PORT}`);
+  console.log('[voiceog] браузер — кнопка; хоткей — «voiceog toggle»');
+});

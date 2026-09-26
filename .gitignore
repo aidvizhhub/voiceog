@@ -1,0 +1,7 @@
+node_modules/
+models/
+recordings/
+server.pid
+server.log
+download.log
+*.tar.bz2

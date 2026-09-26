@@ -1,0 +1,112 @@
+# VOICEog
+
+Мини-локальный голосовой ввод. Жмёшь кнопку (или хоткей) — говоришь — текст падает
+куда надо. Без облака, без аккаунтов, без агентов. Речь → текст на своей машине.
+
+## Что внутри
+
+- **Модель:** NVIDIA Parakeet TDT 0.6B v3 INT8 (25 языков, включая русский и украинский,
+  язык определяется сам, пунктуация своя). Это STT/ASR, не LLM — для расшифровки
+  большая языковая модель не нужна.
+- **Движок:** `sherpa-onnx` (Node-аддон, CPU, int8).
+- **UI:** одна HTML-страница, микрофон через Web Audio, отправка PCM 16 кГц моно.
+- **Диктовка:** глобальный хоткей, запись в фоне (`pw-record`), автовставка текста
+  в активное окно (`wl-copy` + `ydotool` Ctrl+V).
+
+```
+два пути ввода:
+
+1) браузер:  микрофон → 16 кГц моно PCM → POST /transcribe → textarea
+2) хоткей:   pw-record (в демоне) → POST /toggle → STT → wl-copy + Ctrl+V → активное окно
+```
+
+## Запуск
+
+```bash
+./voiceog
+```
+
+Первый запуск сам поставит зависимости и скачает модель (~487 МБ).
+Дальше открываешь http://127.0.0.1:7777, жмёшь микрофон, говоришь, жмёшь ещё раз.
+
+## Диктовка по хоткею (GNOME/Wayland)
+
+Три шага:
+
+```bash
+# 1. авто-вставка: ydotool (нужен один раз, требует sudo)
+sudo dnf install -y ydotool
+sudo mkdir -p /etc/systemd/system/ydotool.service.d
+sudo tee /etc/systemd/system/ydotool.service.d/override.conf >/dev/null <<'EOF'
+[Unit]
+After=user-runtime-dir@1000.service
+
+[Service]
+ExecStart=
+ExecStart=/usr/bin/ydotoold --socket-path=/run/user/1000/.ydotool_socket --socket-perm=0600 --socket-own=1000:1000
+EOF
+sudo systemctl daemon-reload && sudo systemctl enable --now ydotool
+
+# 2. сам хоткей (по умолчанию Ctrl+Alt+V)
+bash scripts/setup-hotkey.sh
+
+# 3. (по желанию) автозапуск демона при входе
+bash scripts/install-service.sh
+```
+
+После этого: нажал **Ctrl+Alt+V** → заговорил → нажал ещё раз → текст сам
+вставился в то окно, которое активно.
+
+> Почему так: на GNOME/Wayland набрать текст «по клавишам» нельзя — раскладку не
+> обойти, кириллица не наберётся. Поэтому текст кладётся в буфер обмена и
+> вставляется через Ctrl+V. `ydotool` — единственный рабочий способ эмулировать
+> нажатия на GNOME/Wayland (через `/dev/uinput`).
+
+## Ручками
+
+```bash
+npm install            # зависимости
+npm run model          # только скачать модель
+npm start              # сервер
+./voiceog toggle       # старт/стоп записи (это и дёргает хоткей)
+./voiceog status       # состояние: пишет ли, готова ли вставка
+```
+
+Переменные:
+
+- `VOICEOG_PORT` — порт (по умолчанию 7777)
+- `VOICEOG_HOST` — адрес (по умолчанию 127.0.0.1, наружу не торчит)
+- `VOICEOG_THREADS` — число потоков CPU (по умолчанию 4)
+- `VOICEOG_MODEL` — путь к папке модели, если положил в другое место
+- `VOICEOG_RECORDER` — команда записи (по умолчанию `pw-record`)
+- `VOICEOG_NO_INJECT=1` — не вставлять текст в окно (серверный режим)
+
+## HTTP
+
+- `GET /` — морда
+- `GET /health` — `{ok, model}`
+- `GET /state` — `{recording, inject, model}`
+- `POST /toggle` — старт/стоп записи; на стопе отдаёт `{recording:false, text, ms, injected}`
+- `POST /transcribe` — принять WAV или сырой PCM 16 кГц моно, вернуть `{text, ms}`
+
+## Проверка без браузера
+
+```bash
+curl -s http://127.0.0.1:7777/health
+curl -s --data-binary @sample.wav http://127.0.0.1:7777/transcribe   # WAV
+```
+
+Сервер понимает и WAV (`RIFF`), и сырой PCM 16 кГц моно.
+
+## Файлы
+
+```
+src/stt.mjs        обёртка над sherpa-onnx (загрузка модели, декод, разбор WAV)
+src/server.mjs     http-сервер: /, /health, /state, /toggle, /transcribe
+src/recorder.mjs   запись с микрофона в демоне (pw-record)
+src/inject.mjs     вставка в активное окно (wl-copy + ydotool)
+public/index.html  морда: кнопка, статус, textarea
+scripts/           download-model, setup-hotkey, install-service
+voiceog            лаунчер + CLI (toggle / status)
+models/            модель (в git не летит)
+```
