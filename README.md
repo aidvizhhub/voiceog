@@ -3,6 +3,10 @@
 Мини-локальный голосовой ввод. Жмёшь кнопку (или хоткей) — говоришь — текст падает
 куда надо. Без облака, без аккаунтов, без агентов. Речь → текст на своей машине.
 
+> Почему это работает на разных Linux и как устроено внутри —
+> в [docs/platform.md](docs/platform.md). Коротко: код сам находит рабочий способ
+> (запись, вставку, хоткей) под то, что стоит в системе.
+
 ## Что внутри
 
 - **Модель:** NVIDIA Parakeet TDT 0.6B v3 INT8 (25 языков, включая русский и украинский,
@@ -12,14 +16,17 @@
 - **UI:** одна HTML-страница, микрофон через Web Audio, отправка PCM 16 кГц моно.
   Тема — **авто / тёмная / светлая**, переключается прямо в шапке и запоминается
   (палитра в духе opencode.ai).
-- **Диктовка:** глобальный хоткей, запись в фоне (`pw-record`), автовставка текста
-  в активное окно (`wl-copy` + `ydotool` Ctrl+V).
+- **Диктовка:** глобальный хоткей, запись в фоне, автовставка текста в активное
+  окно. Всё выбирается по возможностям системы, а не по дистрибутиву: запись —
+  `pw-record` → `parec` → `arecord` → `ffmpeg`; вставка — буфер (`wl-copy` /
+  `xclip`) + `Ctrl+V` (`ydotool` / `dotool` / `wtype` / `xdotool`). Хоткей — `evdev`
+  (работает на любом десктопе, X11 и Wayland).
 
 ```
 два пути ввода:
 
 1) браузер:  микрофон → 16 кГц моно PCM → POST /transcribe → textarea
-2) хоткей:   pw-record (в демоне) → POST /toggle → STT → wl-copy + Ctrl+V → активное окно
+2) хоткей:   запись (pw-record/parec/arecord) → POST /toggle → STT → буфер + Ctrl+V → активное окно
 ```
 
 ## Запуск
@@ -87,38 +94,51 @@ powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Remove
 перезапишется), и в окна, запущенные от имени администратора, вставка не пройдёт
 (защита UIPI) — запускай VOICEog тем же уровнем прав, что и целевое окно.
 
-## Диктовка по хоткею (GNOME/Wayland)
+## Диктовка по хоткею (любой Linux)
 
-Три шага:
+Хоткей и вставка работают не «под GNOME», а под то, что реально есть в системе:
+код сам находит рабочий путь. Настраивать под свой дистрибутив ничего не надо.
+
+Сначала посмотри, что уже готово:
 
 ```bash
-# 1. авто-вставка: ydotool (нужен один раз, требует sudo)
-sudo dnf install -y ydotool
-sudo mkdir -p /etc/systemd/system/ydotool.service.d
-sudo tee /etc/systemd/system/ydotool.service.d/override.conf >/dev/null <<'EOF'
-[Unit]
-After=user-runtime-dir@1000.service
+./voiceog doctor
+```
 
-[Service]
-ExecStart=
-ExecStart=/usr/bin/ydotoold --socket-path=/run/user/1000/.ydotool_socket --socket-perm=0600 --socket-own=1000:1000
-EOF
-sudo systemctl daemon-reload && sudo systemctl enable --now ydotool
+Доктор напечатает: сессия (Wayland/X11), чем пишем, чем вставляем, есть ли доступ
+к клавиатуре, поставлен ли автозапуск. Чего не хватает — скажет прямо.
 
-# 2. сам хоткей (по умолчанию Ctrl+Alt+V)
-bash scripts/setup-hotkey.sh
+Что выбирается автоматически (берётся первый рабочий):
 
-# 3. (по желанию) автозапуск демона при входе
-bash scripts/install-service.sh
+| Задача | Порядок |
+|---|---|
+| запись | `pw-record` → `parec` → `arecord` → `ffmpeg` |
+| буфер | Wayland: `wl-copy` · X11: `xclip` → `xsel` |
+| вставка | `ydotool` → `dotool` → `wtype` (Wayland) · `xdotool` (X11) |
+| хоткей | `evdev` (любой десктоп) → биндинг GNOME (запасной) |
+
+Три шага, чтобы включить:
+
+```bash
+# 1. доступ к клавиатуре (/dev/input) и синтетическим нажатиям (/dev/uinput)
+bash scripts/install-input-access.sh
+
+# 2. поставить инструменты вставки, если доктор просит
+#    Wayland: wl-clipboard + ydotool    X11: xclip + xdotool
+#    (dnf install / apt install / pacman -S / zypper in)
+
+# 3. автозапуск при входе
+bash scripts/install-autostart.sh
 ```
 
 После этого: нажал **Ctrl+Alt+V** → заговорил → нажал ещё раз → текст сам
-вставился в то окно, которое активно.
+вставился в активное окно.
 
-> Почему так: на GNOME/Wayland набрать текст «по клавишам» нельзя — раскладку не
-> обойти, кириллица не наберётся. Поэтому текст кладётся в буфер обмена и
-> вставляется через Ctrl+V. `ydotool` — единственный рабочий способ эмулировать
-> нажатия на GNOME/Wayland (через `/dev/uinput`).
+> Почему буфер + Ctrl+V: набрать кириллицу «по клавишам» нельзя — раскладку не
+> обойти. Поэтому текст кладётся в буфер и вставляется через Ctrl+V — так любой
+> язык. `ydotool`/`dotool` эмулируют нажатия через `uinput` и работают на любом
+> композиторе и на X11. `wtype` печатает Unicode сам, но только на wlroots
+> (Sway/Hyprland/River/Niri) — GNOME и KDE этот протокол не реализуют.
 
 ## Хоткей и режимы — из веб-морды
 
@@ -132,27 +152,25 @@ bash scripts/install-service.sh
 - **Тема** — кнопки в шапке: *авто* (как в системе), *тёмная*, *светлая*. Тоже
   сохраняется в конфиг, а для мгновенного применения дублируется в `localStorage`.
 
-Для режима **hold** нужен доступ к клавиатуре напрямую: GNOME-хоткей умеет только
-«нажал», а «отпустил» — нет. Один раз:
+Для режима **hold** (держишь — говоришь — отпустил) нужен прямой доступ к
+клавиатуре: GNOME-хоткей умеет только «нажал», а «отпустил» — нет, зато умеет
+`evdev`. Это тот же `install-input-access.sh` из шага 1 выше — он ставит
+udev-правила (первый раз требует sudo).
+
+Когда доступ есть — хоткей читает клавиатуру сам (evdev) на любом десктопе, а
+GNOME-биндинг гасится, чтобы не срабатывало дважды. Нет доступа — включается
+запасной путь через GNOME (только режим *toggle*), а морда честно об этом пишет.
+
+### Автозапуск
 
 ```bash
-sudo usermod -aG input "$USER"       # доступ к /dev/input/event* (нужен перелогин)
-# и/или udev-правило uaccess — работает сразу, без перелогина:
-sudo tee /etc/udev/rules.d/70-voiceog-input.rules >/dev/null <<'EOF'
-SUBSYSTEM=="input", KERNEL=="event*", TAG+="uaccess"
-EOF
-sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input
+bash scripts/install-autostart.sh            # поставить
+bash scripts/install-autostart.sh --remove   # снять
 ```
 
-Всё это делает один скрипт (идемпотентно):
-
-```bash
-bash scripts/install-input-access.sh
-```
-
-Когда доступ есть — хоткей читает клавиатуру сам (evdev), а GNOME-биндинг гасится,
-чтобы не срабатывало дважды. Нет доступа — работает как раньше, через GNOME (только
-режим *toggle*), а морда честно об этом пишет.
+Это XDG `.desktop` в `~/.config/autostart` — понимают GNOME, KDE, XFCE, MATE,
+Cinnamon и др., на X11 и на Wayland, и он не требует systemd. Нужен сервис с
+перезапуском и systemd есть — есть и `scripts/install-service.sh`.
 
 ## Ручками
 
@@ -162,6 +180,7 @@ npm run model          # только скачать модель
 npm start              # сервер
 ./voiceog toggle       # старт/стоп записи (это и дёргает хоткей)
 ./voiceog status       # состояние: пишет ли, готова ли вставка
+./voiceog doctor       # что есть в системе: запись, вставка, права, автозапуск
 ```
 
 Переменные:
@@ -170,7 +189,8 @@ npm start              # сервер
 - `VOICEOG_HOST` — адрес (по умолчанию 127.0.0.1, наружу не торчит)
 - `VOICEOG_THREADS` — число потоков CPU (по умолчанию 4)
 - `VOICEOG_MODEL` — путь к папке модели, если положил в другое место
-- `VOICEOG_RECORDER` — команда записи (по умолчанию `pw-record`)
+- `VOICEOG_RECORDER` — своя команда записи. Голое имя (`parec`) берёт аргументы из
+  цепочки, с аргументами — используется как есть. По умолчанию — `pw-record`
 - `VOICEOG_NO_INJECT=1` — не вставлять текст в окно (серверный режим)
 
 ## HTTP
@@ -206,20 +226,21 @@ curl -s --data-binary @sample.wav http://127.0.0.1:7777/transcribe   # WAV
 ## Файлы
 
 ```
-src/stt.mjs        обёртка над sherpa-onnx (загрузка модели, декод, разбор WAV)
-src/server.mjs     http-сервер: /, /health, /state, /toggle, /transcribe, /api/settings
-src/keys.mjs       раскладка: комбинация ↔ evdev-коды и GNOME-строка (плюс общий парсер)
-src/settings.mjs   настройки (хоткей, режим) в voiceog.config.json
-src/platform/      фасад под ОС: linux/* (pw-record, wl-copy, evdev, gsettings)
-                   и win/* (ffmpeg dshow, Set-Clipboard + SendKeys, uiohook)
-src/recorder.mjs   запись в демоне на Linux (pw-record)     ─┐ Linux-адаптеры,
-src/inject.mjs     вставка на Linux (wl-copy + ydotool)       │ подключаются через
-src/evdev.mjs      слушатель клавиатуры Linux (/dev/input)    │ src/platform/posix.mjs
-src/gnome.mjs      GNOME-биндинг (запасной путь)            ─┘
-public/index.html  морда: кнопка, статус, textarea, настройки хоткея
-scripts/           download-model(.sh/.mjs), install-service, install-input-access,
-                   setup-hotkey, install-autostart.ps1, run-hidden.vbs
-voiceog            лаунчер + CLI для Linux (toggle / status)
-voiceog.cmd        лаунчер + CLI для Windows
-models/            модель (в git не летит)
+src/stt.mjs             обёртка над sherpa-onnx (модель, декод, разбор WAV)
+src/server.mjs          http-сервер: /, /health, /state, /toggle, /transcribe, /api/*
+src/doctor.mjs          ./voiceog doctor — что есть в системе
+src/keys.mjs            раскладка: комбинация ↔ evdev-коды и GNOME-строка
+src/settings.mjs        настройки (хоткей, режим) в voiceog.config.json
+src/evdev.mjs           слушатель клавиатуры из /dev/input (хоткей, удержание)
+src/gnome.mjs           GNOME-биндинг (запасной хоткей)
+src/platform/           фасад под ОС
+  linux/detect.mjs      что есть в системе: сессия, доступ к вводу
+  linux/recorder.mjs    запись: pw-record → parec → arecord → ffmpeg
+  linux/inject.mjs      вставка: буфер + Ctrl+V (wl-copy/xclip + ydotool/dotool/wtype/xdotool)
+  win/...               Windows-адаптеры (ffmpeg dshow, Set-Clipboard, uiohook)
+public/index.html       морда: кнопка, статус, textarea, настройки
+scripts/                download-model(.sh/.mjs), install-autostart.sh, install-service.sh,
+                        install-input-access.sh, setup-hotkey.sh, *.ps1/vbs (Windows)
+voiceog / voiceog.cmd   лаунчер + CLI (toggle / status / doctor) под Linux / Windows
+models/                 модель (в git не летит)
 ```

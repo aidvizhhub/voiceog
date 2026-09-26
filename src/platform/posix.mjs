@@ -1,25 +1,19 @@
-// platform/posix.mjs — адаптер Linux/macOS. Просто переиспользует текущие
-// модули проекта без изменений, чтобы поведение на Linux осталось ровно прежним.
+// posix.mjs — адаптер Linux.
+//
+// Ядро проекта (сервер, распознавание, морда) ничего не знает про то, как тут
+// всё устроено. Оно дёргает этот фасад, а фасад отдаёт то, что реально нашлось
+// в системе: см. linux/recorder.mjs и linux/inject.mjs.
+//
+// Хоткей — evdev напрямую из /dev/input: он читает ядро, поэтому работает
+// одинаково на X11 и Wayland и на любом десктопе. Запасной вариант — биндинг
+// средствами GNOME (когда прав на /dev/input нет).
 
-import { Recorder as BaseRecorder } from '../recorder.mjs';
-
-export { injectText, injectionStatus } from '../inject.mjs';
+export { Recorder, listAudioDevices, recordingBackend } from './linux/recorder.mjs';
+export { injectText, injectionStatus, injectionBackend } from './linux/inject.mjs';
 export { HotkeyListener } from '../evdev.mjs';
-export { setGnomeBinding as setFallbackBinding, disableGnomeBinding as disableFallbackBinding } from '../gnome.mjs';
-
-// На Linux устройство записи берёт сам pw-record (default), поэтому выбор
-// микрофона — no-op. Держим общий интерфейс (setDevice/device), чтобы ядро
-// не ветвилось по платформе.
-export class Recorder extends BaseRecorder {
-  setDevice() {}
-  get device() {
-    return '';
-  }
-}
-
-// На Linux устройства ввода берёт сам pw-record (default), поэтому список пуст.
-export const listAudioDevices = async () => [];
+export {
+  setGnomeBinding as setFallbackBinding,
+  disableGnomeBinding as disableFallbackBinding,
+} from '../gnome.mjs';
 
 export const hotkeyBackend = 'evdev';
-export const injectionBackend = 'wl-copy + ydotool';
-export const recordingBackend = 'pw-record';

@@ -239,6 +239,7 @@
           <label class="mode"><input type="radio" name="mode" value="toggle"> нажал — говоришь — нажал</label>
           <label class="mode"><input type="radio" name="mode" value="hold"> держишь — говоришь — отпустил</label>
           <span id="evdev" class="badge">хоткей: ...</span>
+          <span id="engine" class="badge">движки: ...</span>
         </div>
         <div id="setStatus" class="status">нажми на поле и задай комбинацию</div>
       </div>
@@ -364,6 +365,7 @@ document.getElementById('copy').addEventListener('click', async () => {
 const hotkeyEl = document.getElementById('hotkey');
 const setMsg = document.getElementById('setStatus');
 const evdevBadge = document.getElementById('evdev');
+const engineBadge = document.getElementById('engine');
 
 // event.code → наше каноническое имя клавиши
 function browserKey(e) {
@@ -406,6 +408,12 @@ function showEvdev(s) {
   } else {
     evdevBadge.textContent = 'хоткей: не активен (' + be + ')';
     evdevBadge.className = 'badge err';
+  }
+  // Чем реально пишем и вставляем — то же, что печатает «./voiceog doctor».
+  if (s.recordBackend) {
+    engineBadge.textContent = 'пишу: ' + s.recordBackend +
+      ' · вставляю: ' + (s.injectReady ? s.injectBackend : 'НЕ готово');
+    engineBadge.className = 'badge ' + (s.injectReady ? 'ok' : 'err');
   }
 }
 

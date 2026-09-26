@@ -20,6 +20,10 @@ case "${1:-}" in
     curl -s "$BASE/state"; echo
     exit 0
     ;;
+  doctor)
+    # Что есть в системе: запись, вставка, права, автозапуск. Без модели.
+    exec node src/doctor.mjs
+    ;;
 esac
 
 # нативный аддон sherpa-onnx тянется из node_modules — даём ему путь

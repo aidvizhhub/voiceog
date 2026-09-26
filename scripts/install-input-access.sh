@@ -1,33 +1,46 @@
 #!/usr/bin/env bash
-# Даёт VOICEog доступ к клавиатуре напрямую (/dev/input) — нужно для режима
-# удержания: GNOME-хоткей «отпускание» не отдаёт, а evdev отдаёт.
+# Даёт VOICEog доступ к железу ввода — один раз, потом живёт само.
 #
 #   bash scripts/install-input-access.sh
 #
-# Идемпотентно: если правило и группа уже на месте — просто скажет об этом.
+# Два разных доступа:
+#   /dev/input/event* — читать клавиатуру. Нужен хоткею и режиму удержания
+#                       (держишь — говоришь — отпустил).
+#   /dev/uinput       — слать синтетические нажатия. Нужен ydotool/dotool,
+#                       чтобы нажать Ctrl+V при вставке текста.
+#
+# Идемпотентно: чего уже есть — не трогаем, недостающее дописываем.
 # Требует sudo (один раз).
 set -euo pipefail
 
 RULE=/etc/udev/rules.d/70-voiceog-input.rules
 
-echo "[voiceog] доступ к /dev/input..."
+echo "[voiceog] доступ к устройствам ввода..."
 
-# 1) udev-правило uaccess: даёт читать event-устройства активной сессии.
-#    Работает сразу, без перелогина.
-if [ ! -f "$RULE" ]; then
+need_input=1
+need_uinput=1
+if [ -f "$RULE" ]; then
+  grep -q 'KERNEL=="event\*"' "$RULE" && need_input=0
+  grep -q 'KERNEL=="uinput"' "$RULE" && need_uinput=0
+fi
+
+if [ "$need_input" = 0 ] && [ "$need_uinput" = 0 ]; then
+  echo "[voiceog] правила уже есть: $RULE"
+else
   sudo tee "$RULE" >/dev/null <<'EOF'
-# VOICEog: доступ к клавиатурным event-устройствам для активной сессии.
-# Нужно для режима удержания и хоткея через evdev.
+# VOICEog: можно читать клавиатуру (хоткей, режим удержания).
 SUBSYSTEM=="input", KERNEL=="event*", TAG+="uaccess"
+
+# VOICEog: можно слать синтетические нажатия (ydotool/dotool, вставка Ctrl+V).
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", GROUP="input", MODE="0660", TAG+="uaccess"
 EOF
   sudo udevadm control --reload-rules
   sudo udevadm trigger --subsystem-match=input
-  echo "[voiceog] правило поставлено: $RULE"
-else
-  echo "[voiceog] правило уже есть: $RULE"
+  sudo udevadm trigger --subsystem-match=misc
+  echo "[voiceog] правила поставлены: $RULE"
 fi
 
-# 2) группа input — страховка (на случай, если uaccess почему-то не сработал).
+# Группа input — страховка на случай, если uaccess не сработал.
 if id -nG "$USER" | tr ' ' '\n' | grep -qx input; then
   echo "[voiceog] $USER уже в группе input"
 else
@@ -35,4 +48,4 @@ else
   echo "[voiceog] $USER добавлен в группу input (подхватится после перелогина)"
 fi
 
-echo "[voiceog] готово — режим удержания доступен."
+echo "[voiceog] готово — хоткей и удержание доступны."

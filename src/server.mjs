@@ -147,6 +147,7 @@ async function applyFallbackBinding() {
 }
 
 function settingsState() {
+  const inj = injectionStatus();
   return {
     hotkey: settings.hotkey,
     mode: settings.mode,
@@ -155,6 +156,11 @@ function settingsState() {
     backend: hotkeyBackend,
     audioDevice: settings.audioDevice,
     devices: hotkey ? hotkey.devices : [],
+    // чем реально работаем — показывается в морде (та же правда, что у доктора)
+    session: inj.session,
+    recordBackend: recordingBackend,
+    injectBackend: injectionBackend,
+    injectReady: inj.ready,
   };
 }
 
