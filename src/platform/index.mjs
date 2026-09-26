@@ -19,6 +19,7 @@ export const PLATFORM = process.platform;
 const impl = IS_WINDOWS ? await import('./win/index.mjs') : posix;
 
 export const Recorder = impl.Recorder;
+export const listAudioDevices = impl.listAudioDevices;
 export const injectText = impl.injectText;
 export const injectionStatus = impl.injectionStatus;
 export const HotkeyListener = impl.HotkeyListener;
