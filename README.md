@@ -31,6 +31,56 @@
 Первый запуск сам поставит зависимости и скачает модель (~487 МБ).
 Дальше открываешь http://127.0.0.1:7777, жмёшь микрофон, говоришь, жмёшь ещё раз.
 
+## Windows
+
+Проект работает и под Windows. Ядро (распознавание, страница, HTTP-API)
+кроссплатформенное, а системная обвязка вынесена в `src/platform/` — под Windows
+это отдельные адаптеры, Linux-путь не тронут.
+
+Что чем заменено на Windows:
+
+| Задача | Linux | Windows |
+|---|---|---|
+| запись с микрофона | `pw-record` | `ffmpeg` (`-f dshow`), бинарь идёт в комплекте (`ffmpeg-static`) |
+| вставка в окно | `wl-copy` + `ydotool` | `Set-Clipboard` + `SendKeys('^v')` (PowerShell) |
+| глобальный хоткей | `evdev` | `uiohook-napi` (`keydown`+`keyup`, работает режим *hold*) |
+| запасной хоткей ОС | GNOME `gsettings` | не нужен |
+
+Запуск и управление (двойной клик или из консоли):
+
+```bat
+voiceog.cmd            :: старт сервера (поставит зависимости и модель)
+voiceog.cmd toggle     :: старт/стоп записи (это же дёргает хоткей)
+voiceog.cmd status     :: состояние
+```
+
+Требования: Node 18+ и PowerShell (есть в любой Windows). FFmpeg тащить
+отдельно не надо — он уже в зависимостях.
+
+> **Важно про npm.** Свежие npm (11+) по умолчанию блокируют install-скрипты
+> пакетов, а `uiohook-napi` и `ffmpeg-static` без них не поставят свои бинарники.
+> Если после `npm install` хоткей/запись не работают — выполни один раз:
+>
+> ```bat
+> npm rebuild uiohook-napi ffmpeg-static
+> ```
+
+Микрофон берётся первое аудио-устройство из списка DirectShow. Своё можно задать
+переменной `VOICEOG_AUDIO_DEVICE` (имя как в «Диспетчере устройств»), а свой
+ffmpeg — `VOICEOG_FFMPEG`.
+
+Автозапуск при входе:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1
+# снять:
+powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Remove
+```
+
+Ограничения, честно: текст вставляется через буфер обмена (текущий буфер
+перезапишется), и в окна, запущенные от имени администратора, вставка не пройдёт
+(защита UIPI) — запускай VOICEog тем же уровнем прав, что и целевое окно.
+
 ## Диктовка по хоткею (GNOME/Wayland)
 
 Три шага:
@@ -152,14 +202,18 @@ curl -s --data-binary @sample.wav http://127.0.0.1:7777/transcribe   # WAV
 ```
 src/stt.mjs        обёртка над sherpa-onnx (загрузка модели, декод, разбор WAV)
 src/server.mjs     http-сервер: /, /health, /state, /toggle, /transcribe, /api/settings
-src/recorder.mjs   запись с микрофона в демоне (pw-record)
-src/inject.mjs     вставка в активное окно (wl-copy + ydotool)
-src/keys.mjs       раскладка: комбинация ↔ evdev-коды и GNOME-строка
+src/keys.mjs       раскладка: комбинация ↔ evdev-коды и GNOME-строка (плюс общий парсер)
 src/settings.mjs   настройки (хоткей, режим) в voiceog.config.json
-src/evdev.mjs      прямой слушатель клавиатуры (/dev/input) — режим удержания
-src/gnome.mjs      включение/выключение GNOME-биндинга (запасной путь)
+src/platform/      фасад под ОС: linux/* (pw-record, wl-copy, evdev, gsettings)
+                   и win/* (ffmpeg dshow, Set-Clipboard + SendKeys, uiohook)
+src/recorder.mjs   запись в демоне на Linux (pw-record)     ─┐ Linux-адаптеры,
+src/inject.mjs     вставка на Linux (wl-copy + ydotool)       │ подключаются через
+src/evdev.mjs      слушатель клавиатуры Linux (/dev/input)    │ src/platform/posix.mjs
+src/gnome.mjs      GNOME-биндинг (запасной путь)            ─┘
 public/index.html  морда: кнопка, статус, textarea, настройки хоткея
-scripts/           download-model, install-service, install-input-access, setup-hotkey
-voiceog            лаунчер + CLI (toggle / status)
+scripts/           download-model(.sh/.mjs), install-service, install-input-access,
+                   setup-hotkey, install-autostart.ps1
+voiceog            лаунчер + CLI для Linux (toggle / status)
+voiceog.cmd        лаунчер + CLI для Windows
 models/            модель (в git не летит)
 ```

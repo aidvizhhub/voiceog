@@ -238,7 +238,7 @@
         <div class="modes">
           <label class="mode"><input type="radio" name="mode" value="toggle"> нажал — говоришь — нажал</label>
           <label class="mode"><input type="radio" name="mode" value="hold"> держишь — говоришь — отпустил</label>
-          <span id="evdev" class="badge">evdev: ...</span>
+          <span id="evdev" class="badge">хоткей: ...</span>
         </div>
         <div id="setStatus" class="status">нажми на поле и задай комбинацию</div>
       </div>
@@ -388,11 +388,12 @@ hotkeyEl.addEventListener('keydown', (e) => {
 });
 
 function showEvdev(s) {
-  if (s.evdev) {
-    evdevBadge.textContent = 'evdev: активно';
+  const be = s.backend || '?';
+  if (s.hotkeyActive) {
+    evdevBadge.textContent = 'хоткей: активно (' + be + ')';
     evdevBadge.className = 'badge ok';
   } else {
-    evdevBadge.textContent = 'evdev: нет прав (группа input)';
+    evdevBadge.textContent = 'хоткей: не активен (' + be + ')';
     evdevBadge.className = 'badge err';
   }
 }

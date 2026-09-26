@@ -16,12 +16,21 @@ import {
   pcm16ToFloat32,
   modelInfo,
 } from './stt.mjs';
-import { Recorder } from './recorder.mjs';
-import { injectText, injectionStatus } from './inject.mjs';
 import { loadSettings, saveSettings } from './settings.mjs';
 import { isValidCombo } from './keys.mjs';
-import { HotkeyListener } from './evdev.mjs';
-import { setGnomeBinding, disableGnomeBinding } from './gnome.mjs';
+// Вся ОС-специфика — за фасадом: Linux (pw-record/wl-copy/evdev) или Windows
+// (ffmpeg/Set-Clipboard/uiohook). Ядро про платформу не знает.
+import {
+  Recorder,
+  injectText,
+  injectionStatus,
+  HotkeyListener,
+  setFallbackBinding,
+  disableFallbackBinding,
+  hotkeyBackend,
+  injectionBackend,
+  recordingBackend,
+} from './platform/index.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -46,8 +55,9 @@ console.log(`[voiceog] модель готова за ${((Date.now() - t0) / 100
 
 const inject = injectionStatus();
 console.log(
-  `[voiceog] вставка в окно: ${inject.ready ? 'ok (ydotool + wl-copy)' : 'НЕ готова — нет ' + (!inject.ydotool ? 'ydotool ' : '') + (!inject.wlCopy ? 'wl-copy' : '')}`,
+  `[voiceog] вставка в окно: ${inject.ready ? 'ok (' + injectionBackend + ')' : 'НЕ готова — нет ' + (inject.missing || []).join(', ')}`,
 );
+console.log(`[voiceog] платформа: ${recordingBackend} + ${hotkeyBackend}`);
 
 const recorder = new Recorder();
 const NO_INJECT = process.env.VOICEOG_NO_INJECT === '1';
@@ -60,7 +70,7 @@ let evdevAvailable = false;
 
 async function startRecording() {
   if (recorder.recording) return { recording: true, already: true };
-  recorder.start();
+  await recorder.start();
   return { recording: true };
 }
 
@@ -103,19 +113,20 @@ function startHotkey() {
   return evdevAvailable;
 }
 
-// GNOME-биндинг — запасной путь. Если evdev работает, гасим его, чтоб не дублировалось.
-async function applyGnomeBinding() {
+// Запасной хоткей средствами ОС (GNOME на Linux; на Windows — no-op). Если наш
+// собственный слушатель работает, гасим запасной, чтоб не дублировалось.
+async function applyFallbackBinding() {
   try {
     if (evdevAvailable) {
-      await disableGnomeBinding();
+      await disableFallbackBinding();
     } else if (settings.mode === 'toggle') {
-      await setGnomeBinding(settings.hotkey);
+      await setFallbackBinding(settings.hotkey);
     } else {
-      // hold без evdev невозможен — не оставляем «залипшую» запись
-      await disableGnomeBinding();
+      // hold без собственного слушателя невозможен — не оставляем «залипшую» запись
+      await disableFallbackBinding();
     }
   } catch (e) {
-    console.log(`[voiceog] gsettings: ${e && e.message}`);
+    console.log(`[voiceog] запасной хоткей: ${e && e.message}`);
   }
 }
 
@@ -124,7 +135,8 @@ function settingsState() {
     hotkey: settings.hotkey,
     mode: settings.mode,
     theme: settings.theme,
-    evdev: evdevAvailable,
+    hotkeyActive: evdevAvailable,
+    backend: hotkeyBackend,
     devices: hotkey ? hotkey.devices : [],
   };
 }
@@ -278,7 +290,7 @@ const server = http.createServer(async (req, res) => {
       const modeChanged = next.mode !== settings.mode;
       settings = next;
       if (hotkeyChanged) startHotkey();
-      if (hotkeyChanged || modeChanged) await applyGnomeBinding();
+      if (hotkeyChanged || modeChanged) await applyFallbackBinding();
       json(res, 200, settingsState());
       return;
     }
@@ -334,5 +346,5 @@ server.listen(PORT, HOST, () => {
   console.log('[voiceog] браузер — кнопка; хоткей — «voiceog toggle»');
 
   startHotkey();
-  applyGnomeBinding();
+  applyFallbackBinding();
 });
