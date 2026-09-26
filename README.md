@@ -63,6 +63,32 @@ bash scripts/install-service.sh
 > вставляется через Ctrl+V. `ydotool` — единственный рабочий способ эмулировать
 > нажатия на GNOME/Wayland (через `/dev/uinput`).
 
+## Хоткей и режимы — из веб-морды
+
+В морде (`http://127.0.0.1:7777`) есть блок **[3] Хоткей**:
+
+- **Комбинация** — жмёшь поле и набираешь своё сочетание, оно ловится и сохраняется.
+- **Режим**:
+  - *нажал — говоришь — нажал* (`toggle`) — как было: первое нажатие старт, второе стоп.
+  - *держишь — говоришь — отпустил* (`hold`, push-to-talk) — пишет, пока держишь комбо.
+- Настройки лежат в `voiceog.config.json` рядом с проектом и подхватываются сами.
+
+Для режима **hold** нужен доступ к клавиатуре напрямую: GNOME-хоткей умеет только
+«нажал», а «отпустил» — нет. Один раз:
+
+```bash
+sudo usermod -aG input "$USER"     # доступ к /dev/input/event* (нужен перелогин)
+# и/или udev-правило uaccess — работает сразу, без перелогина:
+sudo tee /etc/udev/rules.d/70-voiceog-input.rules >/dev/null <<'EOF'
+SUBSYSTEM=="input", KERNEL=="event*", TAG+="uaccess"
+EOF
+sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input
+```
+
+Когда доступ есть — хоткей читает клавиатуру сам (evdev), а GNOME-биндинг гасится,
+чтобы не срабатывало дважды. Нет доступа — работает как раньше, через GNOME (только
+режим *toggle*), а морда честно об этом пишет.
+
 ## Ручками
 
 ```bash
@@ -116,10 +142,14 @@ curl -s --data-binary @sample.wav http://127.0.0.1:7777/transcribe   # WAV
 
 ```
 src/stt.mjs        обёртка над sherpa-onnx (загрузка модели, декод, разбор WAV)
-src/server.mjs     http-сервер: /, /health, /state, /toggle, /transcribe
+src/server.mjs     http-сервер: /, /health, /state, /toggle, /transcribe, /api/settings
 src/recorder.mjs   запись с микрофона в демоне (pw-record)
 src/inject.mjs     вставка в активное окно (wl-copy + ydotool)
-public/index.html  морда: кнопка, статус, textarea
+src/keys.mjs       раскладка: комбинация ↔ evdev-коды и GNOME-строка
+src/settings.mjs   настройки (хоткей, режим) в voiceog.config.json
+src/evdev.mjs      прямой слушатель клавиатуры (/dev/input) — режим удержания
+src/gnome.mjs      включение/выключение GNOME-биндинга (запасной путь)
+public/index.html  морда: кнопка, статус, textarea, настройки хоткея
 scripts/           download-model, setup-hotkey, install-service
 voiceog            лаунчер + CLI (toggle / status)
 models/            модель (в git не летит)

@@ -18,6 +18,10 @@ import {
 } from './stt.mjs';
 import { Recorder } from './recorder.mjs';
 import { injectText, injectionStatus } from './inject.mjs';
+import { loadSettings, saveSettings } from './settings.mjs';
+import { isValidCombo } from './keys.mjs';
+import { HotkeyListener } from './evdev.mjs';
+import { setGnomeBinding, disableGnomeBinding } from './gnome.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -47,6 +51,82 @@ console.log(
 
 const recorder = new Recorder();
 const NO_INJECT = process.env.VOICEOG_NO_INJECT === '1';
+
+// --- настройки и активация (хоткей) ---
+
+let settings = loadSettings();
+let hotkey = null; // evdev-слушатель
+let evdevAvailable = false;
+
+async function startRecording() {
+  if (recorder.recording) return { recording: true, already: true };
+  recorder.start();
+  return { recording: true };
+}
+
+async function stopAndTranscribe() {
+  const t = Date.now();
+  const buf = await recorder.stop();
+  const text = transcribeBuffer(buf);
+  const ms = Date.now() - t;
+
+  let injected = null;
+  if (text && !NO_INJECT) injected = await injectText(text);
+  if (text) {
+    console.log(`[voiceog] → ${text}${injected && injected.ok ? '  [вставлено]' : ''}`);
+  }
+  return { recording: false, text, ms, injected };
+}
+
+async function toggleDictation() {
+  return recorder.recording ? stopAndTranscribe() : startRecording();
+}
+
+// Что делает хоткей — зависит от режима: toggle дёргает тумблер, hold пишет, пока держишь.
+function onHotkeyDown() {
+  if (settings.mode === 'hold') return startRecording();
+  return toggleDictation();
+}
+
+async function onHotkeyUp() {
+  if (settings.mode === 'hold' && recorder.recording) await stopAndTranscribe();
+}
+
+function startHotkey() {
+  if (hotkey) hotkey.stop();
+  hotkey = new HotkeyListener({
+    hotkey: settings.hotkey,
+    onDown: onHotkeyDown,
+    onUp: onHotkeyUp,
+  });
+  evdevAvailable = hotkey.start();
+  return evdevAvailable;
+}
+
+// GNOME-биндинг — запасной путь. Если evdev работает, гасим его, чтоб не дублировалось.
+async function applyGnomeBinding() {
+  try {
+    if (evdevAvailable) {
+      await disableGnomeBinding();
+    } else if (settings.mode === 'toggle') {
+      await setGnomeBinding(settings.hotkey);
+    } else {
+      // hold без evdev невозможен — не оставляем «залипшую» запись
+      await disableGnomeBinding();
+    }
+  } catch (e) {
+    console.log(`[voiceog] gsettings: ${e && e.message}`);
+  }
+}
+
+function settingsState() {
+  return {
+    hotkey: settings.hotkey,
+    mode: settings.mode,
+    evdev: evdevAvailable,
+    devices: hotkey ? hotkey.devices : [],
+  };
+}
 
 function json(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -170,29 +250,40 @@ const server = http.createServer(async (req, res) => {
         recording: recorder.recording,
         inject: injectionStatus(),
         model: info.name,
+        ...settingsState(),
       });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/settings') {
+      json(res, 200, settingsState());
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/settings') {
+      const body = await readBody(req);
+      let patch = {};
+      try {
+        patch = JSON.parse(body.toString('utf8') || '{}');
+      } catch {
+        /* мусор — оставим как есть */
+      }
+      // битые значения не принимаем, чтоб не сбросить текущие
+      if (patch.hotkey != null && !isValidCombo(patch.hotkey)) delete patch.hotkey;
+      if (patch.mode != null && patch.mode !== 'toggle' && patch.mode !== 'hold') delete patch.mode;
+      const next = saveSettings({ ...settings, ...patch });
+      const hotkeyChanged = next.hotkey !== settings.hotkey;
+      const modeChanged = next.mode !== settings.mode;
+      settings = next;
+      if (hotkeyChanged) startHotkey();
+      if (hotkeyChanged || modeChanged) await applyGnomeBinding();
+      json(res, 200, settingsState());
       return;
     }
 
     // Глобальный хоткей: первый вызов — старт записи, второй — стоп + расшифровка + вставка.
     if (req.method === 'POST' && url.pathname === '/toggle') {
-      if (recorder.recording) {
-        const t = Date.now();
-        const buf = await recorder.stop();
-        const text = transcribeBuffer(buf);
-        const ms = Date.now() - t;
-
-        let injected = null;
-        if (text && !NO_INJECT) injected = await injectText(text);
-        if (text) {
-          console.log(`[voiceog] → ${text}${injected && injected.ok ? '  [вставлено]' : ''}`);
-        }
-
-        json(res, 200, { recording: false, text, ms, injected });
-      } else {
-        recorder.start();
-        json(res, 200, { recording: true });
-      }
+      json(res, 200, await toggleDictation());
       return;
     }
 
@@ -239,4 +330,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`[voiceog] слушаю http://${HOST}:${PORT}`);
   console.log('[voiceog] браузер — кнопка; хоткей — «voiceog toggle»');
+
+  startHotkey();
+  applyGnomeBinding();
 });

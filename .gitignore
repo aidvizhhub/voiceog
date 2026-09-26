@@ -4,4 +4,5 @@ recordings/
 server.pid
 server.log
 download.log
+voiceog.config.json
 *.tar.bz2

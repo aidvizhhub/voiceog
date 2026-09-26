@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>voiceog — локальный голосовой ввод</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --bg: #0c0c0e;
@@ -135,6 +136,32 @@
   }
   .btn:hover { color: var(--bright); border-color: var(--text); }
 
+  .set { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .field {
+    flex: 1;
+    min-width: 200px;
+    padding: 12px 14px;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+  }
+  .field:focus { border-color: var(--text); color: var(--bright); }
+  .modes { display: flex; gap: 22px; align-items: center; margin-top: 14px; flex-wrap: wrap; font-size: 15px; }
+  .mode { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .badge {
+    padding: 2px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .badge.ok { color: var(--bright); border-color: var(--text); }
+  .badge.err { color: #ff9d8a; border-color: #ff9d8a; }
+
   footer {
     max-width: 1180px;
     margin: 0 auto 40px;
@@ -176,6 +203,22 @@
           <button id="copy" class="btn">Копировать</button>
           <button id="clear" class="btn">Очистить</button>
         </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="label"><span class="num">[3]</span> <span class="cap">Хоткей</span></div>
+      <div>
+        <div class="set">
+          <input id="hotkey" class="field" readonly placeholder="нажми комбинацию...">
+          <button id="save" class="btn">Сохранить</button>
+        </div>
+        <div class="modes">
+          <label class="mode"><input type="radio" name="mode" value="toggle"> нажал — говоришь — нажал</label>
+          <label class="mode"><input type="radio" name="mode" value="hold"> держишь — говоришь — отпустил</label>
+          <span id="evdev" class="badge">evdev: ...</span>
+        </div>
+        <div id="setStatus" class="status">нажми на поле и задай комбинацию</div>
       </div>
     </div>
   </div>
@@ -283,6 +326,91 @@ document.getElementById('copy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(out.value); setStatus('скопировано'); }
   catch (e) { setStatus('не скопировалось: ' + e.message, true); }
 });
+
+// --- настройки хоткея ---
+const hotkeyEl = document.getElementById('hotkey');
+const setMsg = document.getElementById('setStatus');
+const evdevBadge = document.getElementById('evdev');
+
+// event.code → наше каноническое имя клавиши
+function browserKey(e) {
+  const c = e.code;
+  if (/^Key[A-Z]$/.test(c)) return c.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(c)) return c.slice(5);
+  if (/^F[0-9]{1,2}$/.test(c)) return c.toLowerCase();
+  const map = {
+    Space: 'space', Enter: 'enter', Tab: 'tab', Escape: 'escape', Backspace: 'backspace',
+    Delete: 'delete', Insert: 'insert', Home: 'home', End: 'end',
+    PageUp: 'pageup', PageDown: 'pagedown',
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    Minus: 'minus', Equal: 'equal', BracketLeft: 'bracketleft', BracketRight: 'bracketright',
+    Backslash: 'backslash', Semicolon: 'semicolon', Quote: 'quote',
+    Comma: 'comma', Period: 'period', Slash: 'slash', Backquote: 'backquote',
+  };
+  return map[c] || null;
+}
+
+hotkeyEl.addEventListener('keydown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return; // ждём саму клавишу
+  const key = browserKey(e);
+  if (!key) return;
+  const mods = [];
+  if (e.ctrlKey) mods.push('ctrl');
+  if (e.altKey) mods.push('alt');
+  if (e.shiftKey) mods.push('shift');
+  if (e.metaKey) mods.push('super');
+  hotkeyEl.value = [...mods, key].join('+');
+  setMsg.textContent = 'нажми «Сохранить», чтобы применить';
+});
+
+function showEvdev(s) {
+  if (s.evdev) {
+    evdevBadge.textContent = 'evdev: активно';
+    evdevBadge.className = 'badge ok';
+  } else {
+    evdevBadge.textContent = 'evdev: нет прав (группа input)';
+    evdevBadge.className = 'badge err';
+  }
+}
+
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    hotkeyEl.value = s.hotkey;
+    const radio = document.querySelector('input[name=mode][value=' + s.mode + ']');
+    if (radio) radio.checked = true;
+    showEvdev(s);
+    setMsg.textContent = s.mode === 'hold' ? 'режим: удержание' : 'режим: переключатель';
+  } catch (e) {
+    setMsg.textContent = 'не прочитал настройки: ' + e.message;
+  }
+}
+
+document.getElementById('save').addEventListener('click', async () => {
+  const checked = document.querySelector('input[name=mode]:checked');
+  const mode = checked ? checked.value : 'toggle';
+  setMsg.textContent = 'сохраняю...';
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hotkey: hotkeyEl.value, mode }),
+    });
+    const s = await r.json();
+    if (!r.ok || s.error) throw new Error(s.error || ('HTTP ' + r.status));
+    hotkeyEl.value = s.hotkey;
+    showEvdev(s);
+    setMsg.textContent = 'сохранено · ' + s.hotkey + ' · ' +
+      (s.mode === 'hold' ? 'удержание' : 'переключатель');
+  } catch (e) {
+    setMsg.textContent = 'не сохранилось: ' + e.message;
+  }
+});
+
+loadSettings();
 </script>
 </body>
 </html>
