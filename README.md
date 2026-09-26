@@ -77,8 +77,8 @@ powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1
 powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Remove
 ```
 
-Задача в Планировщике зовёт `scripts\run-hidden.vbs`, а тот тихо запускает
-`voiceog.cmd` — окно не мигает.
+Задача в автозагрузке зовёт `scripts\run-hidden.vbs`, а тот тихо запускает
+`voiceog.cmd` — окно не мигает. Это per-user, **без прав администратора**.
 
 Ограничения, честно: текст вставляется через буфер обмена (текущий буфер
 перезапишется), и в окна, запущенные от имени администратора, вставка не пройдёт

@@ -3,7 +3,10 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1
 # Снять:  powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Remove
 #
-# Ставит задачу в Планировщик: при входе запускает voiceog.cmd (сервер + хоткей).
+# Кладём ярлык в папку «Автозагрузка» (per-user, БЕЗ прав администратора).
+# Ярлык зовёт wscript на scripts\run-hidden.vbs, а тот тихо поднимает voiceog.cmd —
+# окно консоли не мигает. Планировщик (schtasks /SC ONLOGON) для этого требовал бы
+# прав администратора, поэтому обходимся автозагрузкой.
 
 param([switch]$Remove)
 
@@ -11,21 +14,26 @@ $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $Cmd = Join-Path $Root 'voiceog.cmd'
 $Vbs = Join-Path $Root 'scripts\run-hidden.vbs'
-$Task = 'VOICEog'
+$Startup = [Environment]::GetFolderPath('Startup')
+$Lnk = Join-Path $Startup 'VOICEog.lnk'
 
 if ($Remove) {
-  schtasks /Delete /TN $Task /F 2>$null | Out-Null
-  Write-Host "[voiceog] автозапуск снят ($Task)"
+  if (Test-Path $Lnk) { Remove-Item $Lnk -Force }
+  Write-Host "[voiceog] автозапуск снят: $Lnk"
   exit 0
 }
 
 if (-not (Test-Path $Cmd)) { throw "нет $Cmd" }
 if (-not (Test-Path $Vbs)) { throw "нет $Vbs" }
 
-# Запуск без окна консоли: Планировщик зовёт wscript, тот скрытно поднимает voiceog.cmd.
-$Action = "wscript.exe `"$Vbs`""
-schtasks /Create /TN $Task /TR $Action /SC ONLOGON /RL LIMITED /F | Out-Null
+$sh = New-Object -ComObject WScript.Shell
+$s = $sh.CreateShortcut($Lnk)
+$s.TargetPath = 'wscript.exe'
+$s.Arguments = '"' + $Vbs + '"'
+$s.WorkingDirectory = $Root
+$s.Description = 'VOICEog — локальный голосовой ввод'
+$s.Save()
 
-Write-Host "[voiceog] автозапуск поставлен: $Task → $Cmd (скрытно)"
-Write-Host "[voiceog] проверить: schtasks /Query /TN $Task"
+Write-Host "[voiceog] автозапуск поставлен (скрытно): $Lnk"
+Write-Host "[voiceog] проверить: dir `"$Startup`""
 Write-Host "[voiceog] снять:     powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Remove"
