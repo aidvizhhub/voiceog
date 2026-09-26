@@ -15,6 +15,8 @@ export const DEFAULTS = {
   mode: 'toggle',
   // auto — как в системе, либо принудительно dark/light.
   theme: 'auto',
+  // имя микрофона (Windows); пусто — авто-выбор устройства со звуком.
+  audioDevice: '',
 };
 
 export function loadSettings() {
@@ -35,6 +37,7 @@ export function normalize(raw = {}) {
   }
   if (raw.mode === 'toggle' || raw.mode === 'hold') out.mode = raw.mode;
   if (['auto', 'dark', 'light'].includes(raw.theme)) out.theme = raw.theme;
+  if (typeof raw.audioDevice === 'string') out.audioDevice = raw.audioDevice;
   return out;
 }
 

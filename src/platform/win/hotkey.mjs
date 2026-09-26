@@ -23,6 +23,7 @@ export class HotkeyListener {
     this.pressed = false; // наша клавиша зажата
     this.armed = false; // комбо сработало и ждёт отпускания
     this._attached = false;
+    this._flags = null; // последние флаги модификаторов (ctrl/alt/shift/meta)
     this._kd = (e) => this._key(e, true);
     this._ku = (e) => this._key(e, false);
     this.setCombo(hotkey);
@@ -84,7 +85,17 @@ export class HotkeyListener {
     this.armed = false;
   }
 
+  // Зажаты ли сейчас модификаторы нашего комбо (нужно, чтобы не вставлять текст,
+  // пока пользователь ещё держит Ctrl/Alt — иначе Ctrl+V станет Ctrl+Alt+V).
+  modsDown() {
+    if (!this._flags) return false;
+    return this.modsWanted.some((m) => !!this._flags[MOD_FLAG[m]]);
+  }
+
   _key(e, down) {
+    // Снимок модификаторов на каждое событие (не только по нашей клавише).
+    this._flags = { ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, metaKey: e.metaKey };
+
     if (e.keycode !== this.keyCode) return;
 
     if (down) {
