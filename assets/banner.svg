@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="340" viewBox="0 0 1280 340" role="img" aria-label="VOICEog — локальный голосовой ввод">
+  <defs>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0070f3" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#0070f3" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#0070f3" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="340" fill="#0a0a0a"/>
+  <rect x="0.5" y="0.5" width="1279" height="339" rx="0" fill="none" stroke="#262626"/>
+  <line x1="64" y1="118" x2="620" y2="118" stroke="url(#glow)" stroke-width="1"/>
+  <text x="64" y="108" font-family="Inter, Segoe UI, Roboto, sans-serif" font-size="84" font-weight="700" letter-spacing="-3">
+    <tspan fill="#ededed">voice</tspan><tspan fill="#0070f3">og</tspan>
+  </text>
+  <text x="66" y="160" font-family="Inter, Segoe UI, Roboto, sans-serif" font-size="24" fill="#8f8f8f">Локальный голосовой ввод — одна кнопка, и текст уже в окне</text>
+  <text x="66" y="196" font-family="Inter, Segoe UI, Roboto, sans-serif" font-size="17" fill="#5c5c5c">Речь → текст на своей машине · без облака, аккаунтов и подписок</text>
+  <rect x="720.0" y="160.0" width="5" height="16.0" rx="2.5" fill="#0070f3" opacity="0.25"/><rect x="732.0" y="155.6" width="5" height="24.8" rx="2.5" fill="#0070f3" opacity="0.30"/><rect x="744.0" y="150.0" width="5" height="36.0" rx="2.5" fill="#0070f3" opacity="0.35"/><rect x="756.0" y="147.2" width="5" height="41.6" rx="2.5" fill="#0070f3" opacity="0.39"/><rect x="768.0" y="148.4" width="5" height="39.2" rx="2.5" fill="#0070f3" opacity="0.44"/><rect x="780.0" y="138.1" width="5" height="59.8" rx="2.5" fill="#0070f3" opacity="0.49"/><rect x="792.0" y="131.0" width="5" height="74.0" rx="2.5" fill="#0070f3" opacity="0.53"/><rect x="804.0" y="132.0" width="5" height="72.0" rx="2.5" fill="#0070f3" opacity="0.57"/><rect x="816.0" y="137.0" width="5" height="61.9" rx="2.5" fill="#0070f3" opacity="0.61"/><rect x="828.0" y="122.3" width="5" height="91.4" rx="2.5" fill="#0070f3" opacity="0.65"/><rect x="840.0" y="115.1" width="5" height="105.7" rx="2.5" fill="#0070f3" opacity="0.68"/><rect x="852.0" y="120.4" width="5" height="95.1" rx="2.5" fill="#0070f3" opacity="0.71"/><rect x="864.0" y="127.3" width="5" height="81.5" rx="2.5" fill="#0070f3" opacity="0.74"/><rect x="876.0" y="110.0" width="5" height="116.1" rx="2.5" fill="#0070f3" opacity="0.77"/><rect x="888.0" y="104.1" width="5" height="127.9" rx="2.5" fill="#0070f3" opacity="0.79"/><rect x="900.0" y="113.5" width="5" height="109.0" rx="2.5" fill="#0070f3" opacity="0.81"/><rect x="912.0" y="120.3" width="5" height="95.5" rx="2.5" fill="#0070f3" opacity="0.83"/><rect x="924.0" y="102.6" width="5" height="130.9" rx="2.5" fill="#0070f3" opacity="0.84"/><rect x="936.0" y="98.9" width="5" height="138.2" rx="2.5" fill="#0070f3" opacity="0.85"/><rect x="948.0" y="111.7" width="5" height="112.7" rx="2.5" fill="#0070f3" opacity="0.85"/><rect x="960.0" y="117.1" width="5" height="101.8" rx="2.5" fill="#0070f3" opacity="0.85"/><rect x="972.0" y="101.0" width="5" height="133.9" rx="2.5" fill="#0070f3" opacity="0.85"/><rect x="984.0" y="100.1" width="5" height="135.7" rx="2.5" fill="#0070f3" opacity="0.84"/><rect x="996.0" y="114.9" width="5" height="106.2" rx="2.5" fill="#0070f3" opacity="0.83"/><rect x="1008.0" y="118.4" width="5" height="99.1" rx="2.5" fill="#0070f3" opacity="0.81"/><rect x="1020.0" y="105.7" width="5" height="124.6" rx="2.5" fill="#0070f3" opacity="0.79"/><rect x="1032.0" y="107.6" width="5" height="120.9" rx="2.5" fill="#0070f3" opacity="0.77"/><rect x="1044.0" y="122.6" width="5" height="90.9" rx="2.5" fill="#0070f3" opacity="0.74"/><rect x="1056.0" y="124.4" width="5" height="87.2" rx="2.5" fill="#0070f3" opacity="0.71"/><rect x="1068.0" y="116.2" width="5" height="103.6" rx="2.5" fill="#0070f3" opacity="0.68"/><rect x="1080.0" y="120.3" width="5" height="95.4" rx="2.5" fill="#0070f3" opacity="0.65"/><rect x="1092.0" y="133.6" width="5" height="68.8" rx="2.5" fill="#0070f3" opacity="0.61"/><rect x="1104.0" y="134.7" width="5" height="66.7" rx="2.5" fill="#0070f3" opacity="0.57"/><rect x="1116.0" y="131.5" width="5" height="72.9" rx="2.5" fill="#0070f3" opacity="0.53"/><rect x="1128.0" y="136.8" width="5" height="62.4" rx="2.5" fill="#0070f3" opacity="0.49"/><rect x="1140.0" y="146.6" width="5" height="42.9" rx="2.5" fill="#0070f3" opacity="0.44"/><rect x="1152.0" y="148.3" width="5" height="39.4" rx="2.5" fill="#0070f3" opacity="0.39"/><rect x="1164.0" y="150.1" width="5" height="35.8" rx="2.5" fill="#0070f3" opacity="0.35"/><rect x="1176.0" y="155.3" width="5" height="25.4" rx="2.5" fill="#0070f3" opacity="0.30"/><rect x="1188.0" y="160.0" width="5" height="16.0" rx="2.5" fill="#0070f3" opacity="0.25"/>
+  <rect x="64" y="248" width="116" height="34" rx="17" fill="#111" stroke="#262626"/>
+  <circle cx="82" cy="265" r="4" fill="#0070f3"/>
+  <text x="94" y="270" font-family="Inter, Segoe UI, Roboto, sans-serif" font-size="15" fill="#8f8f8f">без облака</text>
+  <rect x="192" y="248" width="157" height="34" rx="17" fill="#111" stroke="#262626"/>
+  <circle cx="210" cy="265" r="4" fill="#0070f3"/>
+  <text x="222" y="270" font-family="Inter, Segoe UI, Roboto, sans-serif" font-size="15" fill="#8f8f8f">Linux · Windows</text>
+  <rect x="361" y="248" width="173" height="34" rx="17" fill="#111" stroke="#262626"/>
+  <circle cx="379" cy="265" r="4" fill="#0070f3"/>
+  <text x="391" y="270" font-family="Inter, Segoe UI, Roboto, sans-serif" font-size="15" fill="#8f8f8f">Parakeet TDT 0.6B</text>
+  
+</svg>

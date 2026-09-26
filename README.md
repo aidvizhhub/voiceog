@@ -1,7 +1,30 @@
-# VOICEog
+<p align="center">
+  <img src="assets/banner.svg" width="960" alt="VOICEog — локальный голосовой ввод">
+</p>
 
-Мини-локальный голосовой ввод. Жмёшь кнопку (или хоткей) — говоришь — текст падает
-куда надо. Без облака, без аккаунтов, без агентов. Речь → текст на своей машине.
+<p align="center">
+  <img alt="offline" src="https://img.shields.io/badge/offline-100%25-0070f3?style=flat-square">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows-0070f3?style=flat-square">
+  <img alt="stt" src="https://img.shields.io/badge/STT-Parakeet%20TDT%200.6B-0070f3?style=flat-square">
+  <img alt="node" src="https://img.shields.io/badge/Node-18%2B-333?style=flat-square">
+</p>
+
+**Мини-локальный голосовой ввод.** Жмёшь кнопку (или хоткей) — говоришь — текст
+падает куда надо. Без облака, без аккаунтов, без агентов. Речь → текст на своей
+машине.
+
+<p align="center">
+  <img src="assets/morda-dark.png" width="760" alt="Морда VOICEog, тёмная тема">
+  <br>
+  <sub>Морда: кнопка, текст, хоткей, микрофон. Тема — авто / тёмная / светлая.</sub>
+</p>
+
+<details>
+<summary>Светлая тема</summary>
+<p align="center">
+  <img src="assets/morda-light.png" width="760" alt="Морда VOICEog, светлая тема">
+</p>
+</details>
 
 > Почему это работает на разных Linux и как устроено внутри —
 > в [docs/platform.md](docs/platform.md). Коротко: код сам находит рабочий способ
@@ -14,8 +37,8 @@
   большая языковая модель не нужна.
 - **Движок:** `sherpa-onnx` (Node-аддон, CPU, int8).
 - **UI:** одна HTML-страница, микрофон через Web Audio, отправка PCM 16 кГц моно.
-  Тема — **авто / тёмная / светлая**, переключается прямо в шапке и запоминается
-  (палитра в духе opencode.ai).
+  Тема — **авто / тёмная / светлая**, переключается прямо в шапке и запоминается.
+  Оформление — в духе Vercel Geist ([docs/design.md](docs/design.md)).
 - **Диктовка:** глобальный хоткей, запись в фоне, автовставка текста в активное
   окно. Всё выбирается по возможностям системы, а не по дистрибутиву: запись —
   `pw-record` → `parec` → `arecord` → `ffmpeg`; вставка — буфер (`wl-copy` /
