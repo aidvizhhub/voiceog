@@ -14,24 +14,29 @@
 </script>
 <style>
   :root {
-    /* тёмная — фолбэк для старых браузеров; светлая — через light-dark() */
-    --bg: #0c0c0e;
-    --bg: light-dark(#ffffff, #0c0c0e);
-    --panel: #131010;
-    --panel: light-dark(#fafafa, #131010);
-    --line: #3d3838;
-    --line: light-dark(#d9d8d8, #3d3838);
-    --line-2: #4a4545;
-    --line-2: light-dark(#d0cfce, #4a4545);
-    --text: #b8b2b2;
-    --text: light-dark(#1d1d1f, #b8b2b2);
-    --bright: #f2eded;
-    --bright: light-dark(#000000, #f2eded);
-    --muted: #716b6a;
-    --muted: light-dark(#646262, #716b6a);
-    --white: #ffffff;
+    /* Дизайн-токены Vercel Geist (с designsystems.one): монохром, серые рамки,
+       один синий акцент #0070f3, малые радиусы, без свечения.
+       light-dark(светлая, тёмная) — тема переключается через color-scheme. */
+    --bg: light-dark(#fafafa, #000000);
+    --panel: light-dark(#ffffff, #0a0a0a);
+    --line: light-dark(#eaeaea, #333333);
+    --line-2: light-dark(#d4d4d4, #444444);
+    --text: light-dark(#000000, #ededed);
+    --bright: light-dark(#000000, #ffffff);
+    --muted: light-dark(#666666, #888888);
     --white: light-dark(#000000, #ffffff);
-    --mono: "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo,
+    --brand: light-dark(#f0f0f0, #151515);   /* кнопка: тихая поверхность, не заливка */
+    --brand-fg: light-dark(#1a1a1a, #e8e8e8);
+    --accent: #0070f3;                        /* единственный цвет */
+    --accent-soft: light-dark(#eaf4ff, #0a2a4d);
+    --success: light-dark(#0070f3, #3291ff);
+    --danger: #ee0000;
+    --radius: 8px;
+
+    /* Geist Sans/Mono, с кириллическим запасным (Inter/JetBrains). */
+    --sans: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system,
+            "Segoe UI", Roboto, "Noto Sans", sans-serif;
+    --mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
             Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     color-scheme: light dark;
   }
@@ -43,48 +48,52 @@
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font-family: var(--mono);
+    font-family: var(--sans);
     font-size: 16px;
     line-height: 1.6;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
   }
   a { color: var(--text); text-decoration: none; }
-  a:hover { color: var(--white); }
-  button { font-family: var(--mono); }
+  a:hover { color: var(--accent); }
+  button { font-family: var(--sans); }
 
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 22px 32px;
-    border-bottom: 1px solid var(--line);
     gap: 24px;
     flex-wrap: wrap;
   }
-  .logo { font-weight: 700; font-size: 22px; color: var(--white); letter-spacing: .5px; }
+  .logo { font-weight: 600; font-size: 21px; color: var(--bright); letter-spacing: -0.03em; }
   .logo .dim { color: var(--muted); }
-  nav { display: flex; gap: 26px; font-size: 15px; align-items: center; }
+  nav { display: flex; gap: 22px; font-size: 15px; align-items: center; }
   .theme { display: flex; gap: 6px; }
   .theme button {
-    padding: 4px 12px;
+    padding: 5px 13px;
     font-size: 14px;
     color: var(--muted);
     background: transparent;
     border: 1px solid var(--line);
-    border-radius: 999px;
+    border-radius: 6px;
     cursor: pointer;
   }
   .theme button:hover { color: var(--text); border-color: var(--line-2); }
-  .theme button.on { color: var(--bright); border-color: var(--text); }
+  .theme button.on { color: var(--bright); border-color: var(--text); background: var(--panel); }
 
   main {
     max-width: 1180px;
-    margin: 48px auto;
+    margin: 40px auto;
     padding: 0 24px;
   }
 
   .frame {
     background: var(--panel);
     border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+    overflow: hidden;
   }
 
   .row {
@@ -97,7 +106,7 @@
 
   .label { color: var(--muted); font-size: 15px; padding-top: 8px; }
   .label .num { color: var(--muted); }
-  .label .cap { color: var(--text); font-weight: 500; }
+  .label .cap { color: var(--bright); font-weight: 600; }
 
   .rec {
     width: 100%;
@@ -105,50 +114,52 @@
     align-items: center;
     justify-content: center;
     gap: 12px;
-    padding: 26px 20px;
-    font-size: 18px;
-    font-weight: 500;
-    letter-spacing: 1px;
-    color: var(--text);
-    background: var(--bg);
+    padding: 24px 20px;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    color: var(--brand-fg);
+    background: var(--brand);
     border: 1px solid var(--line-2);
-    border-radius: 4px;
+    border-radius: var(--radius);
     cursor: pointer;
-    transition: border-color .15s, color .15s;
+    transition: background .12s, border-color .12s, transform .12s;
   }
-  .rec:hover { border-color: var(--text); color: var(--bright); }
-  .rec.on { border-color: var(--bright); color: var(--bright); }
-  .rec .dot { color: var(--muted); font-size: 20px; line-height: 1; }
-  .rec.on .dot { color: var(--bright); animation: blink 1s steps(2, start) infinite; }
+  .rec:hover { background: color-mix(in srgb, var(--brand) 90%, var(--text) 10%); border-color: var(--text); }
+  .rec:active { transform: translateY(1px); }
+  .rec.on { border-color: var(--danger); background: color-mix(in srgb, var(--brand) 94%, var(--danger) 6%); }
+  .rec .dot { color: var(--danger); font-size: 16px; line-height: 1; }
+  .rec.on .dot { animation: blink 1s steps(2, start) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
 
   .status { margin-top: 14px; color: var(--muted); font-size: 14px; min-height: 22px; }
-  .status.err { color: #ff9d8a; }
+  .status.err { color: var(--danger); }
 
   textarea {
     width: 100%;
     min-height: 220px;
     resize: vertical;
-    padding: 16px;
-    font: inherit;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 15px;
     color: var(--text);
     background: var(--bg);
-    border: 1px solid var(--line-2);
-    border-radius: 4px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
     outline: none;
   }
   textarea::placeholder { color: var(--muted); }
-  textarea:focus { border-color: var(--text); }
+  textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
   .actions { display: flex; gap: 12px; margin-top: 16px; }
   .btn {
-    padding: 6px 16px;
+    padding: 8px 16px;
     font-size: 15px;
     font-weight: 500;
     color: var(--text);
     background: var(--panel);
     border: 1px solid var(--line-2);
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
   }
   .btn:hover { color: var(--bright); border-color: var(--text); }
@@ -157,27 +168,27 @@
   .field {
     flex: 1;
     min-width: 200px;
-    padding: 12px 14px;
+    padding: 12px 16px;
     font: inherit;
     color: var(--text);
     background: var(--bg);
-    border: 1px solid var(--line-2);
-    border-radius: 4px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
     outline: none;
     cursor: pointer;
   }
-  .field:focus { border-color: var(--text); color: var(--bright); }
+  .field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); color: var(--bright); }
   .modes { display: flex; gap: 22px; align-items: center; margin-top: 14px; flex-wrap: wrap; font-size: 15px; }
   .mode { display: flex; gap: 6px; align-items: center; cursor: pointer; }
   .badge {
-    padding: 2px 10px;
+    padding: 3px 10px;
     border: 1px solid var(--line-2);
-    border-radius: 999px;
+    border-radius: 6px;
     font-size: 13px;
     color: var(--muted);
   }
-  .badge.ok { color: var(--bright); border-color: var(--text); }
-  .badge.err { color: #ff9d8a; border-color: #ff9d8a; }
+  .badge.ok { color: var(--accent); border-color: var(--accent); }
+  .badge.err { color: var(--danger); border-color: var(--danger); }
 
   footer {
     max-width: 1180px;
@@ -186,7 +197,7 @@
     color: var(--muted);
     font-size: 14px;
   }
-  footer .on { color: var(--bright); }
+  footer .on { color: var(--accent); }
 
   @media (max-width: 760px) {
     .row { grid-template-columns: 1fr; gap: 16px; padding: 28px 24px; }
