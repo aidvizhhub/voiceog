@@ -63,6 +63,17 @@ console.log(`[voiceog] платформа: ${recordingBackend} + ${hotkeyBackend
 const recorder = new Recorder();
 const NO_INJECT = process.env.VOICEOG_NO_INJECT === '1';
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// В режиме удержания модификаторы могут быть ещё зажаты в момент вставки — тогда
+// Ctrl+V превратится в Ctrl+Alt+V и паста не сработает. Ждём, пока отпустят.
+async function waitHotkeyReleased(maxMs = 900) {
+  const t0 = Date.now();
+  while (hotkey && typeof hotkey.modsDown === 'function' && hotkey.modsDown() && Date.now() - t0 < maxMs) {
+    await sleep(30);
+  }
+}
+
 // --- настройки и активация (хоткей) ---
 
 let settings = loadSettings();
@@ -83,7 +94,10 @@ async function stopAndTranscribe() {
   const ms = Date.now() - t;
 
   let injected = null;
-  if (text && !NO_INJECT) injected = await injectText(text);
+  if (text && !NO_INJECT) {
+    await waitHotkeyReleased();
+    injected = await injectText(text);
+  }
   if (text) {
     console.log(`[voiceog] → ${text}${injected && injected.ok ? '  [вставлено]' : ''}`);
   }

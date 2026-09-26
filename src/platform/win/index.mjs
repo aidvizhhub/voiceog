@@ -10,5 +10,5 @@ export const setFallbackBinding = async () => false;
 export const disableFallbackBinding = async () => false;
 
 export const hotkeyBackend = 'uiohook';
-export const injectionBackend = 'Set-Clipboard + SendKeys';
+export const injectionBackend = 'Set-Clipboard + SendInput';
 export const recordingBackend = 'ffmpeg (dshow)';
