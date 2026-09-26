@@ -69,13 +69,16 @@ voiceog.cmd status     :: состояние
 переменной `VOICEOG_AUDIO_DEVICE` (имя как в «Диспетчере устройств»), а свой
 ffmpeg — `VOICEOG_FFMPEG`.
 
-Автозапуск при входе:
+Автозапуск при входе (сервер поднимается **скрытно**, без окна консоли):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1
 # снять:
 powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Remove
 ```
+
+Задача в автозагрузке зовёт `scripts\run-hidden.vbs`, а тот тихо запускает
+`voiceog.cmd` — окно не мигает. Это per-user, **без прав администратора**.
 
 Ограничения, честно: текст вставляется через буфер обмена (текущий буфер
 перезапишется), и в окна, запущенные от имени администратора, вставка не пройдёт
@@ -212,7 +215,7 @@ src/evdev.mjs      слушатель клавиатуры Linux (/dev/input)   
 src/gnome.mjs      GNOME-биндинг (запасной путь)            ─┘
 public/index.html  морда: кнопка, статус, textarea, настройки хоткея
 scripts/           download-model(.sh/.mjs), install-service, install-input-access,
-                   setup-hotkey, install-autostart.ps1
+                   setup-hotkey, install-autostart.ps1, run-hidden.vbs
 voiceog            лаунчер + CLI для Linux (toggle / status)
 voiceog.cmd        лаунчер + CLI для Windows
 models/            модель (в git не летит)
