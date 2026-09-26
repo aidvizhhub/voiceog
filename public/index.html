@@ -248,6 +248,9 @@
       <div class="label"><span class="num">[4]</span> <span class="cap">Микрофон</span></div>
       <div>
         <select id="mic" class="field"></select>
+        <div class="actions">
+          <button id="micTest" class="btn">Проверить микрофон</button>
+        </div>
         <div id="micStatus" class="status">авто — выберу устройство со звуком</div>
       </div>
     </div>
@@ -509,6 +512,21 @@ micEl.addEventListener('change', async () => {
     micStatus.textContent = micEl.value ? 'выбран: ' + micEl.value : 'авто — выберу устройство со звуком';
   } catch (e) {
     micStatus.textContent = 'не сохранилось: ' + e.message;
+  }
+});
+
+document.getElementById('micTest').addEventListener('click', async () => {
+  micStatus.textContent = 'пишу 1.5с... говори';
+  try {
+    const r = await fetch('/api/mic-test', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+    const level = d.rms < 50 ? 'тишина' : (d.rms < 300 ? 'тихо' : 'норм');
+    const t = (d.text || '').trim();
+    micStatus.textContent =
+      `уровень ${d.rms} (${level}), пик ${d.peak} · ` + (t ? 'услышал: ' + t : 'текст пустой');
+  } catch (e) {
+    micStatus.textContent = 'не получилось: ' + e.message;
   }
 });
 

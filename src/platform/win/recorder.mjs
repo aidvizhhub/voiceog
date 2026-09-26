@@ -93,7 +93,8 @@ function rms(buf) {
 }
 
 // Короткая проба устройства: пишем ms миллисекунд и меряем уровень.
-function probeDevice(device, ms = 500) {
+// Первые ~30% отбрасываем — это прогрев dshow, там часто пусто/шум.
+function probeDevice(device, ms = 800) {
   return new Promise((resolve) => {
     let proc;
     try {
@@ -113,7 +114,11 @@ function probeDevice(device, ms = 500) {
       }
     };
     setTimeout(kill, ms);
-    proc.on('close', () => resolve(rms(Buffer.concat(chunks))));
+    proc.on('close', () => {
+      const b = Buffer.concat(chunks);
+      const warm = Math.floor((b.length * 0.3) / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE;
+      resolve(rms(b.subarray(warm)));
+    });
   });
 }
 

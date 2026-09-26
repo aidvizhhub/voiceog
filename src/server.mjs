@@ -282,6 +282,30 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Проверка микрофона: пишем ~1.5с и отдаём уровень + распознанный текст.
+    if (req.method === 'POST' && url.pathname === '/api/mic-test') {
+      if (recorder.recording) {
+        json(res, 409, { error: 'идёт запись — сначала останови' });
+        return;
+      }
+      await recorder.start();
+      await new Promise((r) => setTimeout(r, 1500));
+      const buf = await recorder.stop();
+      const n = Math.floor(buf.length / 2);
+      let sum = 0;
+      let peak = 0;
+      for (let i = 0; i < n; i++) {
+        const s = buf.readInt16LE(i * 2);
+        sum += s * s;
+        const a = Math.abs(s);
+        if (a > peak) peak = a;
+      }
+      const rms = n ? Math.sqrt(sum / n) : 0;
+      const text = transcribeBuffer(buf);
+      json(res, 200, { device: recorder.device, rms: Math.round(rms), peak, text });
+      return;
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/settings') {
       const body = await readBody(req);
       let patch = {};
