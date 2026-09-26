@@ -80,12 +80,18 @@ bash scripts/install-service.sh
 «нажал», а «отпустил» — нет. Один раз:
 
 ```bash
-sudo usermod -aG input "$USER"     # доступ к /dev/input/event* (нужен перелогин)
+sudo usermod -aG input "$USER"       # доступ к /dev/input/event* (нужен перелогин)
 # и/или udev-правило uaccess — работает сразу, без перелогина:
 sudo tee /etc/udev/rules.d/70-voiceog-input.rules >/dev/null <<'EOF'
 SUBSYSTEM=="input", KERNEL=="event*", TAG+="uaccess"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input
+```
+
+Всё это делает один скрипт (идемпотентно):
+
+```bash
+bash scripts/install-input-access.sh
 ```
 
 Когда доступ есть — хоткей читает клавиатуру сам (evdev), а GNOME-биндинг гасится,
@@ -153,7 +159,7 @@ src/settings.mjs   настройки (хоткей, режим) в voiceog.conf
 src/evdev.mjs      прямой слушатель клавиатуры (/dev/input) — режим удержания
 src/gnome.mjs      включение/выключение GNOME-биндинга (запасной путь)
 public/index.html  морда: кнопка, статус, textarea, настройки хоткея
-scripts/           download-model, setup-hotkey, install-service
+scripts/           download-model, install-service, install-input-access, setup-hotkey
 voiceog            лаунчер + CLI (toggle / status)
 models/            модель (в git не летит)
 ```

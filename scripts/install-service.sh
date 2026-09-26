@@ -38,3 +38,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now voiceog
 sleep 1
 systemctl --user --no-pager status voiceog | head -12
+
+echo
+echo "Для режима удержания (hold) нужен доступ к клавиатуре — один раз:"
+echo "  bash scripts/install-input-access.sh"
