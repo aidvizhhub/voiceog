@@ -3,100 +3,173 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VOICEog</title>
+<title>voiceog — локальный голосовой ввод</title>
 <style>
   :root {
-    --bg: #0b0f0c;
-    --panel: #131a15;
-    --line: #243026;
-    --green: #7dd35f;
-    --green-dim: #4a7a3a;
-    --text: #e6efe7;
-    --muted: #8a9a8d;
+    --bg: #0c0c0e;
+    --panel: #131010;
+    --line: #3d3838;
+    --line-2: #4a4545;
+    --text: #b8b2b2;
+    --bright: #f2eded;
+    --muted: #716b6a;
+    --white: #ffffff;
+    --mono: "Berkeley Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo,
+            Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
   * { box-sizing: border-box; }
-  body {
+  html, body {
     margin: 0;
-    min-height: 100vh;
-    background: radial-gradient(1200px 600px at 50% -10%, #16211a 0%, var(--bg) 60%);
+    background: var(--bg);
     color: var(--text);
-    font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    display: flex;
-    justify-content: center;
-    padding: 32px 16px;
+    font-family: var(--mono);
+    font-size: 16px;
+    line-height: 1.6;
   }
-  main { width: 100%; max-width: 720px; }
-  h1 { margin: 0; font-size: 30px; letter-spacing: .5px; }
-  h1 span { color: var(--green); }
-  .sub { color: var(--muted); margin: 6px 0 28px; font-size: 14px; }
+  a { color: var(--text); text-decoration: none; }
+  a:hover { color: var(--white); }
+  button { font-family: var(--mono); }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 22px 32px;
+    border-bottom: 1px solid var(--line);
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .logo { font-weight: 700; font-size: 22px; color: var(--white); letter-spacing: .5px; }
+  .logo .dim { color: var(--muted); }
+  nav { display: flex; gap: 26px; font-size: 15px; }
+
+  main {
+    max-width: 1180px;
+    margin: 48px auto;
+    padding: 0 24px;
+  }
+
+  .frame {
+    background: var(--panel);
+    border: 1px solid var(--line);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 40px;
+    padding: 40px 56px;
+  }
+  .row + .row { border-top: 1px solid var(--line); }
+
+  .label { color: var(--muted); font-size: 15px; padding-top: 8px; }
+  .label .num { color: var(--muted); }
+  .label .cap { color: var(--text); font-weight: 500; }
+
   .rec {
     width: 100%;
-    padding: 34px 20px;
-    font-size: 22px;
-    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 26px 20px;
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: 1px;
     color: var(--text);
-    background: linear-gradient(180deg, #1b271e, #141c16);
-    border: 1px solid var(--line);
-    border-radius: 18px;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
     cursor: pointer;
-    transition: transform .08s ease, border-color .15s ease, box-shadow .15s ease;
+    transition: border-color .15s, color .15s;
   }
-  .rec:hover { border-color: var(--green-dim); }
-  .rec:active { transform: scale(.995); }
-  .rec.on {
-    border-color: var(--green);
-    box-shadow: 0 0 0 1px var(--green), 0 0 30px -6px var(--green);
-    background: linear-gradient(180deg, #22321f, #16210f);
-  }
-  .status {
-    margin: 14px 2px;
-    min-height: 22px;
-    color: var(--muted);
-    font-size: 14px;
-  }
+  .rec:hover { border-color: var(--text); color: var(--bright); }
+  .rec.on { border-color: var(--bright); color: var(--bright); }
+  .rec .dot { color: var(--muted); font-size: 20px; line-height: 1; }
+  .rec.on .dot { color: var(--bright); animation: blink 1s steps(2, start) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .status { margin-top: 14px; color: var(--muted); font-size: 14px; min-height: 22px; }
   .status.err { color: #ff9d8a; }
+
   textarea {
     width: 100%;
     min-height: 220px;
     resize: vertical;
     padding: 16px;
-    font: 17px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font: inherit;
     color: var(--text);
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 14px;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
     outline: none;
   }
-  textarea:focus { border-color: var(--green-dim); }
-  .row { display: flex; gap: 10px; margin-top: 12px; }
-  .row button {
-    padding: 9px 16px;
-    font-size: 14px;
+  textarea::placeholder { color: var(--muted); }
+  textarea:focus { border-color: var(--text); }
+
+  .actions { display: flex; gap: 12px; margin-top: 16px; }
+  .btn {
+    padding: 6px 16px;
+    font-size: 15px;
+    font-weight: 500;
     color: var(--text);
     background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
     cursor: pointer;
   }
-  .row button:hover { border-color: var(--green-dim); }
-  .dot { color: var(--green); }
+  .btn:hover { color: var(--bright); border-color: var(--text); }
+
+  footer {
+    max-width: 1180px;
+    margin: 0 auto 40px;
+    padding: 0 24px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  footer .on { color: var(--bright); }
+
+  @media (max-width: 760px) {
+    .row { grid-template-columns: 1fr; gap: 16px; padding: 28px 24px; }
+    nav { gap: 16px; }
+  }
 </style>
 </head>
 <body>
+<header>
+  <div class="logo">voice<span class="dim">og</span></div>
+  <nav>
+    <a href="https://github.com/aidvizhhub/voiceog" target="_blank" rel="noopener">GitHub</a>
+    <a href="http://127.0.0.1:7777/health" target="_blank" rel="noopener">Health</a>
+  </nav>
+</header>
+
 <main>
-  <h1>VOICE<span>og</span></h1>
-  <p class="sub"><span class="dot">●</span> локально • Parakeet TDT 0.6B v3 INT8 • без облака</p>
+  <div class="frame">
+    <div class="row">
+      <div class="label"><span class="num">[1]</span> <span class="cap">Запись</span></div>
+      <div>
+        <button id="rec" class="rec"><span class="dot">●</span><span id="recLabel">НАЖМИ И ГОВОРИ</span></button>
+        <div id="status" class="status">готов</div>
+      </div>
+    </div>
 
-  <button id="rec" class="rec">🎙 <span id="recLabel">Нажми и говори</span></button>
-  <div id="status" class="status">Готов</div>
-
-  <textarea id="out" placeholder="Тут появится распознанный текст..."></textarea>
-
-  <div class="row">
-    <button id="copy">Копировать</button>
-    <button id="clear">Очистить</button>
+    <div class="row">
+      <div class="label"><span class="num">[2]</span> <span class="cap">Текст</span></div>
+      <div>
+        <textarea id="out" placeholder="тут появится распознанный текст..."></textarea>
+        <div class="actions">
+          <button id="copy" class="btn">Копировать</button>
+          <button id="clear" class="btn">Очистить</button>
+        </div>
+      </div>
+    </div>
   </div>
 </main>
+
+<footer>
+  <span class="on">●</span> локально · parakeet-tdt-0.6b-v3-int8 · без облака
+</footer>
 
 <script>
 const btn = document.getElementById('rec');
@@ -116,7 +189,7 @@ function setStatus(text, isErr) {
 
 function ui(on) {
   btn.classList.toggle('on', on);
-  label.textContent = on ? 'Идёт запись… жми чтобы стоп' : 'Нажми и говори';
+  label.textContent = on ? 'СТОП' : 'НАЖМИ И ГОВОРИ';
 }
 
 async function start() {
@@ -131,9 +204,9 @@ async function start() {
     recorder.start();
     recording = true;
     ui(true);
-    setStatus('Слушаю…');
+    setStatus('слушаю...');
   } catch (e) {
-    setStatus('Нет доступа к микрофону: ' + e.message, true);
+    setStatus('нет доступа к микрофону: ' + e.message, true);
   }
 }
 
@@ -141,7 +214,7 @@ function stop() {
   if (!recorder) return;
   recording = false;
   ui(false);
-  setStatus('Распознаю…');
+  setStatus('распознаю...');
   recorder.stop();
   if (stream) stream.getTracks().forEach((t) => t.stop());
 }
@@ -155,7 +228,7 @@ async function onStop() {
     const decoded = await ac.decodeAudioData(ab.slice(0));
     await ac.close();
 
-    // Пересэмплируем в 16 кГц моно через OfflineAudioContext.
+    // пересэмплируем в 16 кГц моно
     const TARGET = 16000;
     const frames = Math.max(1, Math.ceil(decoded.duration * TARGET));
     const off = new OfflineAudioContext(1, frames, TARGET);
@@ -184,23 +257,17 @@ async function onStop() {
     if (text) {
       out.value = out.value.trim() ? out.value.replace(/\s*$/, '') + '\n' + text : text;
     }
-    setStatus(text ? ('Готово • ' + data.ms + ' мс') : 'Тишина — ничего не разобрал');
+    setStatus(text ? ('готово · ' + data.ms + ' мс') : 'тишина — ничего не разобрал');
   } catch (e) {
-    setStatus('Ошибка: ' + e.message, true);
+    setStatus('ошибка: ' + e.message, true);
   }
 }
 
 btn.addEventListener('click', () => (recording ? stop() : start()));
-
-document.getElementById('clear').addEventListener('click', () => { out.value = ''; setStatus('Готов'); });
-
+document.getElementById('clear').addEventListener('click', () => { out.value = ''; setStatus('готов'); });
 document.getElementById('copy').addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(out.value);
-    setStatus('Скопировано');
-  } catch (e) {
-    setStatus('Не скопировалось: ' + e.message, true);
-  }
+  try { await navigator.clipboard.writeText(out.value); setStatus('скопировано'); }
+  catch (e) { setStatus('не скопировалось: ' + e.message, true); }
 });
 </script>
 </body>
