@@ -19,6 +19,8 @@
 #   VOICEOG_DOWNLOAD_NODE=1              — нет node.exe → позвать sidecar/provision.sh
 #   VOICEOG_SIDECAR_DIR=<папка>          — где искать/класть node.exe (по умолч. window/target/win-sidecar)
 #   VOICEOG_CACHE=<папка>                — кэш загрузок (по умолч. /tmp/voiceog-win)
+#   APP_VERSION=<x.y.z>                  — версия для setup.exe; по умолч. берётся
+#                                          из window/Cargo.toml (единый источник)
 #
 # Запуск:  window/packaging/windows/build-installer.sh
 set -euo pipefail
@@ -49,6 +51,18 @@ OUT_FILE="$(abs "$OUT_FILE")"
 
 log() { printf '[voiceog] %s\n' "$*"; }
 die() { printf '[voiceog] ОШИБКА: %s\n' "$*" >&2; exit 1; }
+
+# --- версия установщика ---------------------------------------------------
+# Единый источник — window/Cargo.toml (как у AppImage/бандла). Иначе после тега
+# v0.1.1 setup.exe врал бы «0.1.0»: NSIS-версия жила в .nsi хардкодом.
+# Можно перебить снаружи: APP_VERSION=0.2.0 build-installer.sh
+if [ -n "${APP_VERSION:-}" ]; then
+  log "APP_VERSION задана снаружи: $APP_VERSION"
+else
+  APP_VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$PROJECT/window/Cargo.toml" | head -1)"
+  [ -n "$APP_VERSION" ] || die "не удалось вытащить version из $PROJECT/window/Cargo.toml
+  задай вручную: APP_VERSION=<x.y.z> $0"
+fi
 
 # makensis — нативная Windows-программа. Под Git Bash на Windows абсолютные
 # POSIX-пути (/d/...) она не поймёт, поэтому конвертим через cygpath. На Linux
@@ -108,11 +122,13 @@ fi
 log "exe окна:   $WIN_EXE"
 log "node.exe:   $NODE_EXE"
 log "server dir: $SERVER_DIR"
+log "версия:     $APP_VERSION"
 log "собираю makensis..."
 
 mkdir -p "$(dirname "$OUT_FILE")"
 
 makensis -V3 \
+  -DAPP_VERSION="$APP_VERSION" \
   -DWIN_EXE="$(to_win "$WIN_EXE")" \
   -DNODE_EXE="$(to_win "$NODE_EXE")" \
   -DSERVER_DIR="$(to_win "$SERVER_DIR")" \
