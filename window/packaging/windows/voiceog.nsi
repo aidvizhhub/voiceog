@@ -17,7 +17,14 @@
 ; можно перебить снаружи:  makensis -DWIN_EXE=... -DNODE_EXE=... voiceog.nsi
 
 Unicode true
-Target amd64-unicode
+; Target НЕ задаём — оставляем дефолт NSIS = x86-unicode.
+; Так надо потому, что у официального Windows-NSIS (nsis.sf.net, CI-раннер) в
+; комплекте нет стаба amd64-unicode: `Target amd64-unicode` валится на
+; "reading stub ... zlib-amd64-unicode" ещё до сборки. Установщик 32-битный,
+; но payload внутри всё равно x64 (node.exe и окно), а ставим всё в
+; %LOCALAPPDATA% текущего пользователя — 32-битный инсталлятор там работает
+; без вопросов и на 64-битной Windows. Хочешь amd64-стаб — собирай makensis,
+; у которого он есть (Linux-NSIS), но быстрый путь релиза = x86-unicode.
 
 ; --------------------------------------------------------------------------
 ; Пути.
