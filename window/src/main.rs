@@ -118,8 +118,9 @@ fn make_webview(window: &Window, url: &str, origin: &str) -> wry::Result<WebView
 }
 
 fn main() -> wry::Result<()> {
-    // Платформенный препа-хук: на Linux гасим DMABUF-рендерер WebKitGTK до
-    // старта GTK (окно не падает на Wayland). На Windows — пустышка.
+    // Платформенный препа-хук до старта GTK. На NVIDIA+Wayland — включаем
+    // GPU (DMABUF + __NV_DISABLE_EXPLICIT_SYNC=1), на остальных ничего не
+    // трогаем; CPU-режим — вручную через VOICEOG_DISABLE_DMABUF=1.
     platform::prepare_environment();
 
     let url = voiceog_url();
