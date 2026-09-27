@@ -1,8 +1,21 @@
 node_modules/
 models/
 recordings/
-server.pid
-server.log
-download.log
-voiceog.config.json
 *.tar.bz2
+target/
+
+# личные настройки (в репу идёт voiceog.config.example.json)
+voiceog.config.json
+
+# логи и pid-файлы
+*.log
+*.pid
+nohup.out
+
+# редакторы и ОС
+.DS_Store
+*.swp
+
+# сборка AppImage
+squashfs-root/
+AppDir/

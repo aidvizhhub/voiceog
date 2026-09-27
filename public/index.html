@@ -279,9 +279,16 @@ const label = document.getElementById('recLabel');
 const statusEl = document.getElementById('status');
 const out = document.getElementById('out');
 
-let recorder = null;
-let chunks = [];
+// Запись голоса: getUserMedia → AudioWorklet отдаёт сырой PCM s16le, копим чанки,
+// по СТОП клеим WAV и шлём на /transcribe. Никакого MediaRecorder/decodeAudioData:
+// в WebKitGTK (wry) MediaRecorder отдаёт пустой блоб (encodebin поверх GStreamer),
+// а decodeAudioData(webm/opus) там же врёт — из-за этого сервер отвечал «тишина».
+let audioCtx = null;    // AudioContext текущей записи
+let srcNode = null;     // источник с микрофона
+let workNode = null;    // AudioWorkletNode (основной путь)
+let procNode = null;    // ScriptProcessor (запасной путь)
 let stream = null;
+let pcmChunks = [];     // куски Int16
 let recording = false;
 
 function setStatus(text, isErr) {
@@ -294,63 +301,136 @@ function ui(on) {
   label.textContent = on ? 'СТОП' : 'НАЖМИ И ГОВОРИ';
 }
 
+// Float32 [-1..1] → Int16 — один кусок записи
+function blockToInt16(f32) {
+  const out = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) {
+    const s = Math.max(-1, Math.min(1, f32[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return out;
+}
+
+function collect(int16) {
+  pcmChunks.push(int16);
+}
+
+// Сэмплрейт у железки свой (на Fedora обычно 48 кГц). Просим у контекста 16 кГц,
+// а если он так не умеет — берём как есть. Реальную частоту кладём в WAV-заголовок,
+// и сервер сам приводит её к 16 кГц (Sherpa умеет), без ручного ресэмплинга в JS.
+function makeContext() {
+  try { return new AudioContext({ sampleRate: 16000 }); }
+  catch (e) { return new AudioContext(); }
+}
+
 async function start() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
     });
-    chunks = [];
-    recorder = new MediaRecorder(stream);
-    recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-    recorder.onstop = onStop;
-    recorder.start();
+    audioCtx = makeContext();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    srcNode = audioCtx.createMediaStreamSource(stream);
+
+    pcmChunks = [];
+    workNode = null;
+    procNode = null;
+
+    // Тишина в колонки: граф должен куда-то идти, иначе ворклет не вызывается.
+    const mute = audioCtx.createGain();
+    mute.gain.value = 0;
+    mute.connect(audioCtx.destination);
+
+    try {
+      // основной путь — ворклет (в audio-потоке, UI не роняет сэмплы)
+      await audioCtx.audioWorklet.addModule('/pcm-worklet.js');
+      workNode = new AudioWorkletNode(audioCtx, 'pcm-capture', { channelCount: 1 });
+      workNode.port.onmessage = (e) => collect(e.data);
+      srcNode.connect(workNode);
+      workNode.connect(mute);
+    } catch (e) {
+      // запасной путь — ScriptProcessor (старый, но живой)
+      procNode = audioCtx.createScriptProcessor(4096, 1, 1);
+      procNode.onaudioprocess = (ev) => collect(blockToInt16(ev.inputBuffer.getChannelData(0)));
+      srcNode.connect(procNode);
+      procNode.connect(mute);
+    }
+
     recording = true;
     ui(true);
     setStatus('слушаю...');
   } catch (e) {
     setStatus('нет доступа к микрофону: ' + e.message, true);
+    await teardown();
   }
 }
 
 function stop() {
-  if (!recorder) return;
+  if (!recording) return;
   recording = false;
   ui(false);
   setStatus('распознаю...');
-  recorder.stop();
-  if (stream) stream.getTracks().forEach((t) => t.stop());
+  onStop();
+}
+
+// Глушим захват и микрофон, но НЕ теряем уже собранные чанки.
+async function teardown() {
+  try { if (workNode) workNode.port.onmessage = null; } catch (e) {}
+  try { if (procNode) procNode.onaudioprocess = null; } catch (e) {}
+  try { if (srcNode) srcNode.disconnect(); } catch (e) {}
+  try { if (workNode) workNode.disconnect(); } catch (e) {}
+  try { if (procNode) procNode.disconnect(); } catch (e) {}
+  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+  if (audioCtx) { try { await audioCtx.close(); } catch (e) {} audioCtx = null; }
+  workNode = null; procNode = null; srcNode = null;
+}
+
+// Int16 моно → WAV (RIFF, s16le). Заголовок 44 байта + данные.
+function pcmToWav(pcm, sampleRate) {
+  const dataLen = pcm.length * 2;
+  const buf = new ArrayBuffer(44 + dataLen);
+  const dv = new DataView(buf);
+  const ascii = (off, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
+  ascii(0, 'RIFF');
+  dv.setUint32(4, 36 + dataLen, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  dv.setUint32(16, 16, true);              // размер fmt-блока
+  dv.setUint16(20, 1, true);               // PCM
+  dv.setUint16(22, 1, true);               // моно
+  dv.setUint32(24, sampleRate, true);      // частота
+  dv.setUint32(28, sampleRate * 2, true);  // байт в секунду
+  dv.setUint16(32, 2, true);               // выравнивание блока
+  dv.setUint16(34, 16, true);              // бит на сэмпл
+  ascii(36, 'data');
+  dv.setUint32(40, dataLen, true);
+  new Int16Array(buf, 44).set(pcm);
+  return buf;
 }
 
 async function onStop() {
+  const rate = audioCtx ? audioCtx.sampleRate : 16000;
+  const chunks = pcmChunks;
+  pcmChunks = [];
+  await teardown();
+
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  // меньше ~0.15с движок не примет — сразу честная тишина
+  if (total < rate * 0.15) {
+    setStatus('тишина — ничего не разобрал');
+    return;
+  }
+
   try {
-    const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
-    const ab = await blob.arrayBuffer();
-
-    const ac = new AudioContext();
-    const decoded = await ac.decodeAudioData(ab.slice(0));
-    await ac.close();
-
-    // пересэмплируем в 16 кГц моно
-    const TARGET = 16000;
-    const frames = Math.max(1, Math.ceil(decoded.duration * TARGET));
-    const off = new OfflineAudioContext(1, frames, TARGET);
-    const src = off.createBufferSource();
-    src.buffer = decoded;
-    src.connect(off.destination);
-    src.start();
-    const rendered = await off.startRendering();
-    const f32 = rendered.getChannelData(0);
-
-    const pcm = new Int16Array(f32.length);
-    for (let i = 0; i < f32.length; i++) {
-      const s = Math.max(-1, Math.min(1, f32[i]));
-      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-    }
+    const pcm = new Int16Array(total);
+    let off = 0;
+    for (const c of chunks) { pcm.set(c, off); off += c.length; }
+    const wav = pcmToWav(pcm, rate);
 
     const resp = await fetch('/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
-      body: pcm.buffer,
+      body: wav,
     });
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));

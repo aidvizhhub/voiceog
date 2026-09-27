@@ -1,0 +1,65 @@
+[package]
+name = "voiceog-window"
+version = "0.1.0"
+edition = "2024"
+description = "Нативное окно-пульт VOICEog (tao + wry + tray-icon)"
+license = "MIT"
+readme = false
+
+[dependencies]
+# tao/wry/tray-icon — кросс-платформенные, тянут свой системный слой сами.
+tao = "0.37.1"
+# default-features = false: без фичи muda-libxdo — она тянет системный dev-пакет
+# libxdo, который нам не нужен (это про X11-меню). Для трея хватает libappindicator
+# (она же подтягивает muda-gtk3).
+tray-icon = { version = "0.25.1", default-features = false, features = ["libappindicator"] }
+wry = "0.57.0"
+
+# zbus — single-instance через D-Bus: первый процесс занимает well-known имя
+# org.voiceog.window.SingleInstance, второй будит его и выходит (см.
+# src/single_instance.rs). Кроссплатформенный: на Windows без сессионной шины
+# D-Bus просто молча выключается, окно всё равно стартует.
+zbus = "5.18"
+
+# gtk напрямую — нужен для gtk_window().present() (надёжный показ окна на Linux).
+# Версия обязана совпадать с той, что тянет tao 0.37 (у него gtk 0.18).
+# Только unix: на Windows/macOS gtk не собирается и не нужен — там показ окна
+# решает сам tao.
+[target.'cfg(unix)'.dependencies]
+gtk = "0.18"
+
+# --- cargo-deb: метаданные .deb-пакета (Debian/Ubuntu) ---
+# Сборка: cargo deb  →  target/debian/*.deb
+[package.metadata.deb]
+maintainer = "VOICEog <voiceog@localhost>"
+copyright = "2026, VOICEog"
+section = "utils"
+priority = "optional"
+# libgtk-3-0 | libgtk-3-0t64 — старая и новая схемы имён gtk3 в Debian/Ubuntu.
+# Остальные deps оставляем как есть (webkit2gtk-4.1 и appindicator3 — имена стабильны).
+depends = "libwebkit2gtk-4.1-0, libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1"
+assets = [
+    ["target/release/voiceog-window", "usr/bin/", "755"],
+    ["packaging/voiceog-window.desktop", "usr/share/applications/", "644"],
+    ["packaging/icon-256.png", "usr/share/icons/hicolor/256x256/apps/voiceog-window.png", "644"],
+]
+
+# --- cargo-generate-rpm: метаданные .rpm-пакета (Fedora/RHEL/openSUSE) ---
+# Сборка: cargo build --release && cargo generate-rpm  →  target/generate-rpm/*.rpm
+[package.metadata.generate-rpm]
+name = "voiceog-window"
+summary = "Нативное окно-пульт VOICEog"
+license = "MIT"
+vendor = "VOICEog"
+group = "Applications/System"
+assets = [
+    { source = "target/release/voiceog-window", dest = "/usr/bin/voiceog-window", mode = "755" },
+    { source = "packaging/voiceog-window.desktop", dest = "/usr/share/applications/voiceog-window.desktop", mode = "644" },
+    { source = "packaging/icon-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/voiceog-window.png", mode = "644" },
+]
+
+# У cargo-generate-rpm зависимости задаются таблицей имя = "версия", а не массивом.
+[package.metadata.generate-rpm.requires]
+"webkit2gtk4.1" = "*"
+gtk3 = "*"
+libayatana-appindicator-gtk3 = "*"

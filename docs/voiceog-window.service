@@ -1,0 +1,51 @@
+[Unit]
+# Заготовка systemd --user юнита для нативного окна VOICEog.
+# Кладётся как есть в:  ~/.config/systemd/user/voiceog-window.service
+# Затем:                systemctl --user daemon-reload
+#                       systemctl --user enable --now voiceog-window
+#
+# ВАЖНО ПРО ОКРУЖЕНИЕ (те самые «env-грабли»):
+# systemd --user — это отдельный мир, он НЕ видит переменные твоего логин-сеанса
+# автоматически. А окну, чтобы вообще появиться, нужен доступ к дисплею:
+#   * Wayland — переменная WAYLAND_DISPLAY (обычно wayland-0)
+#   * X11     — переменная DISPLAY (обычно :0)
+# Ещё нужен адрес сессионной шины — XDG_RUNTIME_DIR и DBUS_SESSION_BUS_ADDRESS.
+#
+# На Fedora с GNOME gnome-session сам импортирует их в systemd --user, поэтому
+# строки Environment= ниже обычно не нужны. Проверить, что видит systemd:
+#     systemctl --user show-environment | grep -E 'WAYLAND_DISPLAY|DISPLAY'
+# Если там пусто — раскомментируй и подставь свои значения (узнать свои:
+#     echo "$WAYLAND_DISPLAY $DISPLAY"  в обычном терминале).
+#
+# Почему в ExecStart стоит scripts/run-window.sh, а не сам бинарь: скрипт
+# поднимет сервер, если его нет, дождётся его и погасит ровно свой при выходе.
+#
+# ПРО ПЕРЕНОСИМОСТЬ ПУТЕЙ: в WorkingDirectory= и ExecStart= НЕТ жёсткого
+# /home/<кто-то>. Вместо него — спецификатор systemd %h (домашний каталог
+# пользователя, под которым крутится юнит). Значит юнит ставится как есть на
+# любую машину и любого юзера: %h раскроется в его /home/<user>. Держим юнит в
+# ~/Projects/VOICEog — тогда ничего править не надо. Если проект лежит в другом
+# месте, поменяй только путь после %h. Скрипт run-window.sh сам находит корень
+# проекта от своего расположения, поэтому работает откуда угодно.
+Description=VOICEog — нативное окно-пульт
+After=graphical-session.target
+PartOf=graphical-session.target
+# Если сервер уже живёт отдельным юнитом — пусть окно стартует после него.
+After=voiceog.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/VOICEog
+# Раскомментируй, если `systemctl --user show-environment` пуст по этим строкам:
+#Environment=WAYLAND_DISPLAY=wayland-0
+#Environment=DISPLAY=:0
+#Environment=XDG_SESSION_TYPE=wayland
+# Обход падения WebKitGTK на Wayland («Error 71»); бинарь гасит сам, тут — на всякий.
+Environment=WEBKIT_DISABLE_DMABUF_RENDERER=1
+ExecStart=%h/Projects/VOICEog/scripts/run-window.sh
+Restart=on-failure
+# Окно — не сервис в привычном смысле: без рестарта по «успешному» выходу.
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,362 @@
+# release.yml — конвейер релизов VOICEog.
+#
+# Что делает:
+#   * linux  (ubuntu-22.04) → .deb, .rpm, .AppImage, портативный tar.zst
+#   * windows (windows-latest) → voiceog-window.exe + NSIS setup.exe
+#   * release: по тегу v* приклеивает собранное к GitHub Release
+#
+# Триггеры: пуш тега v* (напр. v0.1.0) и ручной запуск (workflow_dispatch).
+# На ручном запуске пакеты просто складываются в артефакты, релиз не создаётся.
+#
+# Почему linux именно ubuntu-22.04: glibc. AppImage упаковывает системные
+# библиотеки, а собранный бинарь линкуется с той glibc, что на сборочной машине.
+# На свежем ubuntu-24.04 получится glibc 2.39 — такой AppImage не заведётся на
+# Debian 12 / Ubuntu 22.04 / Fedora 39. На 22.04 берём glibc 2.35 — заводится
+# везде, куда нам надо. Деб/рпи выигрывают от этого же.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Минимум прав по умолчанию; релизу отдельно выдам contents: write.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+  # ВОСПРОИЗВОДИМОСТЬ УПАКОВОК.
+  # Rust-бинарь детерминирован, а вот упаковки «гуляют» по метаданным:
+  #   * .rpm пишет в заголовок BUILDTIME (момент сборки пакета);
+  #   * .deb (ar + tar внутри) несёт mtime файлов;
+  #   * портативный tar.zst/.tar.gz несёт mtime файлов.
+  # SOURCE_DATE_EPOCH убирает этот разброс: cargo-generate-rpm, cargo-deb и
+  # GNU tar берут его как «время сборки»/mtime. Тот же вход → тот же хэш.
+  # Проверено локально на .rpm: при SOURCE_DATE_EPOCH две сборки дали идентичный
+  # файл (см. docs/release-manifest-0.1.0.md).
+  #
+  # Значение — фиксированная эпоха (2023-11-14T22:13:20Z). Так надёжнее, чем
+  # github.event.head_commit.timestamp: у ручного запуска (workflow_dispatch) его
+  # нет вовсе, а константа даёт одинаковые байты при любом способе пуска.
+  # Переопределить: Repository variable SOURCE_DATE_EPOCH
+  # (Settings → Secrets and variables → Actions → Variables) — если нужно
+  # привязать «время сборки» к конкретному коммиту/дате.
+  SOURCE_DATE_EPOCH: ${{ vars.SOURCE_DATE_EPOCH || '1700000000' }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux: .deb + .rpm + .AppImage
+  # ---------------------------------------------------------------------------
+  linux:
+    name: Linux (.deb / .rpm / AppImage)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Забрать код
+        uses: actions/checkout@v4
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Системные dev-пакеты
+        # webkit2gtk-4.1 + gtk3 + soup3 + appindicator — то, что тянут tao/wry/tray-icon.
+        # libfuse2 нужен AppImage-тулзам, patchelf/file/desktop-file-utils — linuxdeploy.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libayatana-appindicator3-dev \
+            libglib2.0-dev \
+            libgtk-3-bin \
+            libfuse2 \
+            file \
+            patchelf \
+            desktop-file-utils
+
+      - name: Поставить cargo-deb и cargo-generate-rpm
+        run: |
+          cargo install cargo-deb --locked
+          cargo install cargo-generate-rpm --locked
+
+      - name: Сборка бинарника (release)
+        working-directory: window
+        run: cargo build --release
+
+      - name: .deb (cargo-deb)
+        working-directory: window
+        run: cargo deb
+        # Результат: window/target/debian/*.deb
+
+      - name: .rpm (cargo-generate-rpm)
+        working-directory: window
+        run: cargo generate-rpm
+        # Результат: window/target/generate-rpm/*.rpm
+
+      - name: AppImage (linuxdeploy + plugin-gtk)
+        # Скрипт сам зовёт cargo build --release и качает linuxdeploy/appimagetool в
+        # window/target/appimage/tools. FUSE не нужен: внутри APPIMAGE_EXTRACT_AND_RUN=1.
+        run: bash window/packaging/appimage/build.sh
+
+      - name: Портативный бандл (make-bundle.sh)
+        # Портативный tar.zst «скачал → распаковал → запустил ./run.sh»: окно + сервер
+        # (src/, public/) + prod-node_modules под linux-x64. Бинарник уже собран выше,
+        # поэтому SKIP_BUILD=1 — cargo скрипт не зовёт.
+        # hashFiles-проверка: если window/packaging/bundle/make-bundle.sh нет в
+        # чекауте (неполный чекаут) — шаг пропускается и релиз не падает.
+        if: ${{ hashFiles('window/packaging/bundle/make-bundle.sh') != '' }}
+        env:
+          SKIP_BUILD: '1'
+        run: bash window/packaging/bundle/make-bundle.sh
+
+      - name: Залить Linux-артефакты
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          if-no-files-found: error
+          path: |
+            window/target/debian/*.deb
+            window/target/generate-rpm/*.rpm
+            window/target/appimage/*.AppImage
+            window/target/bundle/VOICEog-*.tar.zst
+            window/target/bundle/VOICEog-*.tar.gz
+
+  # ---------------------------------------------------------------------------
+  # Linux: живая проверка, что собранный пакет реально СТАВИТСЯ и бинарь жив
+  # ---------------------------------------------------------------------------
+  # Прогоняем один и тот же .deb/.rpm в чистых контейнерах разных дистрибутивов:
+  # важно не «собралось», а «встало и линкуется». Поэтому контейнеры, а не
+  # руннер — за один job скармливаем пакет нескольким системам разом.
+  #
+  # fail-fast: false — падение ubuntu:22.04 не должно прятать, что, скажем,
+  # fedora:44 живая. Пусть краснеет только то, что реально сломано.
+  install-test-linux:
+    name: Установка ${{ matrix.image }} (${{ matrix.pkg }})
+    needs: linux
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:22.04
+            pkg: deb
+          - image: ubuntu:24.04
+            pkg: deb
+          - image: debian:12
+            pkg: deb
+          - image: debian:13
+            pkg: deb
+          - image: fedora:43
+            pkg: rpm
+          - image: fedora:44
+            pkg: rpm
+    container: ${{ matrix.image }}
+    steps:
+      - name: Забрать linux-packages
+        # Исходники не нужны — только уже собранные пакеты из job linux.
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: dist
+
+      - name: Что скачали
+        shell: bash
+        run: |
+          ls -la dist
+
+      - name: Поставить пакет из локального файла
+        shell: bash
+        # apt/dnf сами дотянут зависимости (gtk3, webkit2gtk-4.1, appindicator)
+        # из репозиториев дистрибутива. Контейнер уже root — sudo не нужен.
+        run: |
+          set -euxo pipefail
+          # download-artifact@v4 сохраняет структуру путей артефакта (debian/…,
+          # generate-rpm/…), поэтому ставим не по glob ./dist/*.deb (он пустой),
+          # а находим файл рекурсивно через find.
+          if [ "${{ matrix.pkg }}" = "deb" ]; then
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            pkg="$(find dist -name '*.deb' -print -quit)"
+            [ -n "$pkg" ] || { echo "::error::в dist не найдено ни одного .deb"; exit 1; }
+            apt-get install -y "$pkg"
+          else
+            pkg="$(find dist -name '*.rpm' -print -quit)"
+            [ -n "$pkg" ] || { echo "::error::в dist не найдено ни одного .rpm"; exit 1; }
+            dnf install -y "$pkg"
+          fi
+
+      - name: Проверить, что пакет встал и бинарь линкуется
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          if [ "${{ matrix.pkg }}" = "deb" ]; then
+            dpkg -s voiceog-window | grep -E '^(Package|Version|Status):'
+          else
+            rpm -q voiceog-window
+          fi
+
+          test -x /usr/bin/voiceog-window
+
+          # «not found» у ldd = не хватает .so в рантайме. Это и есть суть
+          # проверки: пакет мог встать, но бинарь на этой системе не запустится.
+          # ldd под pipefail роняет шаг раньше дружелюбного сообщения, поэтому
+          # пишем его вывод в файл через `|| true`, потом читаем отдельно.
+          ldd /usr/bin/voiceog-window > /tmp/ldd.txt 2>&1 || true
+          cat /tmp/ldd.txt
+          if grep -q 'not found' /tmp/ldd.txt; then
+            echo "::error::ldd нашёл неразрешённые зависимости у /usr/bin/voiceog-window"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Windows: exe окна + NSIS-установщик
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Windows (setup.exe)
+    runs-on: windows-latest
+    steps:
+      - name: Забрать код
+        uses: actions/checkout@v4
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # sidecar собираем в window/target/win-sidecar — оттуда установщик берёт
+      # node.exe и серверные файлы. node.exe (Linux-часть) тянет provision.sh,
+      # node_modules с win32-x64-нативниками собирает build-node-modules.ps1
+      # (нативные sherpa-onnx-node, uiohook-napi, ffmpeg-static — только на Windows).
+      - name: node.exe для sidecar (provision.sh)
+        shell: bash
+        run: bash window/packaging/windows/sidecar/provision.sh
+
+      - name: node-модули под Windows (build-node-modules.ps1)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File window/packaging/windows/sidecar/build-node-modules.ps1
+
+      # Быстрая проверка, что sidecar собран целиком (node.exe + win-нативники +
+      # серверные файлы). WITH_MODEL=0 — как и у установщика ниже: модели в репе
+      # нет, поэтому её отсутствие тут не ошибка.
+      - name: Проверка sidecar (verify-sidecar.sh)
+        shell: bash
+        env:
+          WITH_MODEL: '0'
+        run: bash window/packaging/windows/sidecar/verify-sidecar.sh
+
+      - name: Сборка окна (release)
+        working-directory: window
+        run: cargo build --release
+        # Результат: window/target/release/voiceog-window.exe
+        # NB: .exe остаётся НЕвоспроизводимым даже при заданном SOURCE_DATE_EPOCH.
+        # PE-заголовок несёт TimeDateStamp (момент линковки), а в .rdata лежит
+        # случайный GUID PDB: MSVC-линкер генерит новый GUID на каждый линк, из-за
+        # чего байты exe отличаются от сборки к сборке. Это ожидаемо, не баг
+        # упаковки. Лечится отдельно (/Brepro + -C link-arg), в этой правке не
+        # трогаем — фиксируем как известное ограничение.
+
+      - name: Поставить NSIS (makensis), если его нет
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-progress
+            "$env:ProgramFiles(x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+          makensis -VERSION
+
+      # Сборку установщика ведёт build-installer.sh (shell: bash = Git Bash на
+      # раннере). Пути sidecar передаём явно; WITH_MODEL=0 — модели в репе нет
+      # models/ в .gitignore — ~641 МБ на диске (архив ~487 МБ), скачается при первом старте.
+      - name: Установщик NSIS (build-installer.sh)
+        shell: bash
+        env:
+          VOICEOG_WIN_EXE: window/target/release/voiceog-window.exe
+          VOICEOG_NODE_EXE: window/target/win-sidecar/node.exe
+          VOICEOG_SERVER_DIR: window/target/win-sidecar
+          WITH_MODEL: '0'
+        run: bash window/packaging/windows/build-installer.sh
+
+      # SMOKE-проверка установщика: тихая установка в настоящий %LOCALAPPDATA%,
+      # проверка что exe на месте, затем тихое удаление. continue-on-error:
+      # проверка шумит краснотой, но не роняет релиз — артефакты уже собраны, а
+      # флак среды (WebView2/антивирус на раннере) не должен стопорить релиз.
+      - name: Smoke-проверка установщика (тихая установка + удаление)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Join-Path $env:GITHUB_WORKSPACE 'window\target\VOICEog-setup.exe'
+          if (-not (Test-Path $setup)) {
+            Write-Warning "установщика нет: $setup — smoke пропускаю"
+            exit 0
+          }
+
+          $installDir = Join-Path $env:LOCALAPPDATA 'VOICEog'
+          $exe = Join-Path $installDir 'voiceog-window.exe'
+          $uni = Join-Path $installDir 'uninstall.exe'
+
+          Write-Host "тихая установка: $setup /S"
+          $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          Write-Host "установщик вернул код $($p.ExitCode)"
+
+          if (-not (Test-Path $exe)) {
+            throw "после /S нет $exe (код установщика $($p.ExitCode))"
+          }
+          Write-Host "OK: файлы встали -> $exe"
+
+          if (Test-Path $uni) {
+            Write-Host "тихое удаление: $uni /S"
+            Start-Process -FilePath $uni -ArgumentList '/S' -Wait | Out-Null
+          } else {
+            Write-Warning "нет удалятора $uni — удаляю папку вручную"
+          }
+
+          # NSIS-удалятор складывает копию в %TEMP% и может вернуть управление
+          # раньше конца чистки — ждём, пока exe реально исчезнет.
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path $exe) -and ((Get-Date) -lt $deadline)) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path $exe) {
+            throw "после удаления $exe всё ещё на месте"
+          }
+          Write-Host "OK: удаление сработало, папка чистая"
+
+      - name: Залить Windows-артефакты
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup
+          # setup.exe может не собраться (нет .nsi / не сошлись пути) — не падаем,
+          # релиз всё равно выйдет с тем, что собралось.
+          if-no-files-found: ignore
+          path: |
+            window/target/VOICEog-setup.exe
+            window/target/release/voiceog-window.exe
+
+  # ---------------------------------------------------------------------------
+  # Release: только по тегу v*
+  # ---------------------------------------------------------------------------
+  release:
+    name: GitHub Release
+    needs: [linux, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Забрать все артефакты
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Приклеить к Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # artifacts/**/* — артефакты сохраняют структуру путей, поэтому рекурсивно.
+          files: artifacts/**/*
+          fail_on_unmatched_files: false
+          generate_release_notes: true

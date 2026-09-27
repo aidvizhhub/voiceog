@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=VOICEog
+Comment=Нативное окно-пульт VOICEog
+Exec=voiceog-window
+Terminal=false
+Categories=Utility;
+Icon=voiceog-window
+StartupNotify=true

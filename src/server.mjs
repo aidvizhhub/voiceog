@@ -276,6 +276,18 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Ворклет записи. audioWorklet.addModule требует именно text/javascript,
+    // иначе браузер молча отказывается его грузить.
+    if (req.method === 'GET' && url.pathname === '/pcm-worklet.js') {
+      const js = fs.readFileSync(path.join(ROOT, 'public', 'pcm-worklet.js'));
+      res.writeHead(200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end(js);
+      return;
+    }
+
     if (req.method === 'GET' && url.pathname === '/health') {
       json(res, 200, { ok: true, model: info.name });
       return;
