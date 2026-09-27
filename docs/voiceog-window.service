@@ -40,8 +40,11 @@ WorkingDirectory=%h/Projects/VOICEog
 #Environment=WAYLAND_DISPLAY=wayland-0
 #Environment=DISPLAY=:0
 #Environment=XDG_SESSION_TYPE=wayland
-# Обход падения WebKitGTK на Wayland («Error 71»); бинарь гасит сам, тут — на всякий.
-Environment=WEBKIT_DISABLE_DMABUF_RENDERER=1
+# Рендер окна (DMABUF/GPU) выбирает сам бинарь: на NVIDIA+Wayland включает GPU
+# через __NV_DISABLE_EXPLICIT_SYNC, иначе дефолт WebKit. Не форсим
+# WEBKIT_DISABLE_DMABUF_RENDERER здесь — иначе убиваем GPU-фикс.
+# При проблемах с окном (белое/падение) — аварийный CPU-режим строкой ниже:
+#Environment=VOICEOG_DISABLE_DMABUF=1
 ExecStart=%h/Projects/VOICEog/scripts/run-window.sh
 Restart=on-failure
 # Окно — не сервис в привычном смысле: без рестарта по «успешному» выходу.

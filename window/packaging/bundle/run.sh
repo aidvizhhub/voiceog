@@ -147,9 +147,11 @@ else
 fi
 
 # --- 5. окно ----------------------------------------------------------------
-# WebKitGTK на Wayland с DMABUF-рендерером иногда отдаёт белое окно.
-# Сам бинарь это гасит; страхуемся, если снаружи переменную обнулили.
-export WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"
+# Рендер окна выбирает сам бинарь: на NVIDIA+Wayland включает GPU через
+# __NV_DISABLE_EXPLICIT_SYNC, иначе оставляет дефолт WebKit. Мы НЕ навязываем
+# WEBKIT_DISABLE_DMABUF_RENDERER — иначе убиваем GPU-фикс. Аварийный CPU-режим:
+# VOICEOG_DISABLE_DMABUF=1 (см. window/src/platform/linux.rs). Если задал
+# пользователь снаружи — переменная унаследуется сама.
 
 log "открываю окно…"
 rc=0
