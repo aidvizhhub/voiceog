@@ -129,6 +129,8 @@ powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Remove
 - Раздача: `.deb`, `.rpm`, AppImage, портативный бандл и Windows-`setup.exe` —
   [docs/packaging.md](docs/packaging.md).
 - Что нового в релизе — [docs/release-notes-0.1.0.md](docs/release-notes-0.1.0.md).
+- Свежий фикс GPU-рендера на NVIDIA+Wayland (0.1.1) —
+  [docs/release-notes-0.1.1.md](docs/release-notes-0.1.1.md).
 - Ручная проверка окна по шагам (чек-лист) — [docs/qa-window.md](docs/qa-window.md).
 - Хэши и размеры артефактов релиза — [docs/release-manifest-0.1.0.md](docs/release-manifest-0.1.0.md).
 - Что делать, если не работает — [docs/troubleshooting.md](docs/troubleshooting.md).
