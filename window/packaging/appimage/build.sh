@@ -15,9 +15,11 @@
 #      зашитым абсолютным путям (/usr/libexec/webkit2gtk-4.1 и
 #      /usr/lib64/webkit2gtk-4.1/injected-bundle), а внутри AppImage их надо
 #      резолвить относительно корня AppDir.
-#   4. Добавляем AppRun-хук: WEBKIT_DISABLE_DMABUF_RENDERER=1 (лечит белое
-#      окно на NVIDIA/Wayland) + cd в корень AppDir, чтобы относительные пути
-#      из п.3 сошлись.
+#   4. Добавляем AppRun-хук: LD_LIBRARY_PATH для хелперов WebKit, путь к
+#      injected-bundle и cd в корень AppDir, чтобы относительные пути из п.3
+#      сошлись. Выбор DMABUF/CPU-рендера AppRun больше НЕ навязывает — им
+#      рулит сам бинарь (NVIDIA+Wayland → GPU, иначе дефолты, фолбэк —
+#      VOICEOG_DISABLE_DMABUF=1; см. window/src/platform/linux.rs).
 #   5. appimagetool упаковывает AppDir в единый .AppImage.
 #
 # Сеть нужна только на первом запуске (качаем linuxdeploy/appimagetool/
@@ -189,14 +191,19 @@ done
 # --- 5. AppRun-хук -----------------------------------------------------------
 # AppImageKit-овский AppRun сорсит apprun-hooks/*.sh, поэтому хук может и
 # переменные выставить, и сделать cd для родительской оболочки.
-log "пишу AppRun-хук (dmabuf off + cd в корень AppDir)"
+log "пишу AppRun-хук (LD_LIBRARY_PATH + injected-bundle + cd в корень AppDir)"
 HOOKDIR="$APPDIR/apprun-hooks"
 mkdir -p "$HOOKDIR"
 cat > "$HOOKDIR/voiceog-webkit.sh" <<'EOF'
 #! /usr/bin/env bash
-# Отключаем DMABUF-рендерер WebKit: на NVIDIA/Wayland он отдаёт белое окно
-# или падает. Софт-рендер работает везде, для пульта этого хватает.
-export WEBKIT_DISABLE_DMABUF_RENDERER=1
+# ВАЖНО: DMABUF-рендерер (GPU) тут НЕ трогаем. Раньше хук жёстко ставил
+# WEBKIT_DISABLE_DMABUF_RENDERER=1, и мы теряли GPU-ускорение на всех
+# NVIDIA+Wayland (окно лагучее). Теперь режим выбирает сам бинарь:
+#   - NVIDIA + Wayland → WEBKIT_DISABLE_DMABUF_RENDERER=0 +
+#     __NV_DISABLE_EXPLICIT_SYNC=1 (GPU, Error 71 не летит);
+#   - всё остальное → дефолты WebKit;
+#   - аварийный CPU-фолбэк → VOICEOG_DISABLE_DMABUF=1.
+# Подробности: window/src/platform/linux.rs.
 # Хелпер-процессы WebKit (WebKitWebProcess и т.п.) — отдельные бинарники, у
 # которых нет rpath на usr/lib. Без этого они не найдут libwebkit2gtk и
 # веб-процесс упадёт (белое окно). Поэтому кладём библиотеки в LD_LIBRARY_PATH.

@@ -16,7 +16,7 @@
 | В консоли `Gtk-CRITICAL … gtk_widget_get_scale_factor` | Трей-хоста нет — `libappindicator` ушёл в устаревший запасной путь | Не смертельно, программа работает. Лечится тем же перелогином (см. строку выше) |
 | «Нет доступа к микрофону» в окне | Вебвью по умолчанию **запрещает** микрофон; в нашей сборке разрешён `permission_handler` (только `PermissionKind::Microphone`) | Если видишь ошибку — страница не наша или сборка старая. Проверь, что окно грузит адрес морды и бинарь свежий. Всё остальное (камера, геолокация) мы специально запрещаем |
 | «Тишина — ничего не разобрал» | Раньше так врал `MediaRecorder` в WebKitGTK: отдавал пустой блоб, ошибок не показывал. В текущей сборке запись идёт через AudioWorklet сырым PCM | Если вернулось — проверь `public/pcm-worklet.js` и что морда свежая. Но сначала баналь: молчал, писал короче ~0.15 с или микрофон отдаёт ноль. Это не вина модели |
-| Окно падает на старте: `Gdk-Message: Error 71 … dispatching to Wayland` | DMABUF-рендерер WebKitGTK не дружит с Wayland | Лечится переменной `WEBKIT_DISABLE_DMABUF_RENDERER=1` — почему и как, в мини-разделе «Почему `WEBKIT_DISABLE_DMABUF_RENDERER=1` — не костыль» |
+| Окно падает на старте: `Gdk-Message: Error 71 … dispatching to Wayland` | DMABUF-рендерер WebKitGTK не дружит с Wayland — конкретно с проприетарным NVIDIA, где нужен обход explicit-sync | На NVIDIA+Wayland бинарь сам включает GPU-рендер (`WEBKIT_DISABLE_DMABUF_RENDERER=0` + `__NV_DISABLE_EXPLICIT_SYNC=1`). Если всё равно падает/белое — CPU-фолбэк `VOICEOG_DISABLE_DMABUF=1`. Разбор — в мини-разделе «Рендер окна: GPU на NVIDIA+Wayland и CPU-фолбэк» |
 | Порт 7777 занят / надо другой порт | На этом порту уже висит сервер (часто `voiceog.service`) или другая программа | `VOICEOG_PORT=7999 ./scripts/run-window.sh`. Адрес морды и `/health` считаются от `VOICEOG_PORT`/`VOICEOG_URL`, хардкода 7777 нет |
 | Второй запуск не открывает второе окно | Так и задумано (by design): защита живёт в **бинаре** через D-Bus | Ничего чинить не надо — полный разбор и переменные в мини-разделе про второй запуск (`zbus`) ниже |
 | Пакет не ставится: не хватает системных библиотек | На целевой машине нет движка/трея | `.deb`: `sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1`. `.rpm`: `sudo dnf install webkit2gtk4.1 gtk3 libayatana-appindicator-gtk3` |
@@ -39,13 +39,27 @@
 сырой **PCM s16le** → страница навешивает 44-байтный WAV-заголовок →
 `POST /transcribe`. Если снова «тишина» — смотри worklet и свежесть морды.
 
-### Почему `WEBKIT_DISABLE_DMABUF_RENDERER=1` — не костыль
-Это стандартный обходной путь для WebKitGTK под Wayland. DMABUF-рендерер
-быстрый, но на связке с некоторыми драйверами валит окно на старте
-(`Gdk-Message: Error 71 … dispatching to Wayland`). Платим чуть меньшей
-плавностью — не работоспособностью. В бинарь переменная зашита первой строкой
-(до инициализации GTK), в AppImage — в AppRun-хуке. Позже уже поздно: если
-запускаешь сам — выставь заранее.
+### Рендер окна: GPU на NVIDIA+Wayland и CPU-фолбэк
+Раньше мы глушили DMABUF-рендерер (`WEBKIT_DISABLE_DMABUF_RENDERER=1`) —
+WebKitGTK под Wayland валился на старте (`Gdk-Message: Error 71 … dispatching
+to Wayland`). Но это уводило отрисовку на CPU, и окно получалось лагучим.
+
+Живой тест показал: виноват не DMABUF сам по себе, а **explicit-sync** с
+проприетарным NVIDIA. Если к включённому DMABUF добавить
+`__NV_DISABLE_EXPLICIT_SYNC=1`, рендер заводится **на GPU** (WebKit-процесс
+реально открывает `/dev/dri/renderD128`, ест VRAM) и окно не падает.
+
+Поэтому решение вынесено в бинарь (первая строка до инициализации GTK,
+`window/src/platform/linux.rs`):
+
+- **NVIDIA-proprietary + Wayland** → сами ставим `WEBKIT_DISABLE_DMABUF_RENDERER=0`
+  и `__NV_DISABLE_EXPLICIT_SYNC=1`. GPU работает из коробки.
+- **AMD / Intel / nouveau / X11** → ничего не трогаем: дефолты WebKit рабочие.
+- **Снова глючит?** → `VOICEOG_DISABLE_DMABUF=1` возвращает старый CPU-режим
+  (это аварийная ручка, а не основной путь).
+
+Что задали снаружи в env — уважаем и не перетираем. Раньше флаг был зашит в
+AppImage-хуке — теперь хук его не ставит, решает бинарь.
 
 ### Про single-instance
 Так и задумано (by design). Защита живёт в бинаре: первый экземпляр занимает
