@@ -38,13 +38,23 @@ SERVER_DIR="${VOICEOG_SERVER_DIR:-$SIDECAR_DIR}"
 WITH_MODEL="${WITH_MODEL:-1}"
 OUT_FILE="${OUT_FILE:-$PROJECT/window/target/VOICEog-setup.exe}"
 
+# makensis (нативный) считает относительные пути от своей базы, а не от нашего
+# cwd — поэтому относительный WIN_EXE/NODE_EXE/SERVER_DIR может не найтись.
+# Приводим к абсолютным до проверок и до -D.
+abs() { case "$1" in /*|[A-Za-z]:*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
+WIN_EXE="$(abs "$WIN_EXE")"
+NODE_EXE="$(abs "$NODE_EXE")"
+SERVER_DIR="$(abs "$SERVER_DIR")"
+OUT_FILE="$(abs "$OUT_FILE")"
+
 log() { printf '[voiceog] %s\n' "$*"; }
 die() { printf '[voiceog] ОШИБКА: %s\n' "$*" >&2; exit 1; }
 
 # makensis — нативная Windows-программа. Под Git Bash на Windows абсолютные
 # POSIX-пути (/d/...) она не поймёт, поэтому конвертим через cygpath. На Linux
-# cygpath нет — пути уходят как есть, и mingw-nsis их ест. Относительные пути
-# не трогаем: makensis считает их от своего CWD.
+# cygpath нет — пути уходят как есть, и mingw-nsis их ест. Пути сюда приходят
+# уже абсолютными (см. abs выше): относительные makensis считал бы от своей
+# базы, а не от нашего cwd, и мог не найти файл.
 to_win() {
   case "$1" in
     /*)
