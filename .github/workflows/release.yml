@@ -182,7 +182,9 @@ jobs:
             apt-get update
             pkg="$(find dist -name '*.deb' -print -quit)"
             [ -n "$pkg" ] || { echo "::error::в dist не найдено ни одного .deb"; exit 1; }
-            apt-get install -y "$pkg"
+            # ./ обязателен: apt без него принимает путь за имя пакета
+            # («E: Unable to locate package dist/debian») и ставит не файл, а ищет в репах.
+            apt-get install -y "./$pkg"
           else
             pkg="$(find dist -name '*.rpm' -print -quit)"
             [ -n "$pkg" ] || { echo "::error::в dist не найдено ни одного .rpm"; exit 1; }
@@ -261,11 +263,17 @@ jobs:
       - name: Поставить NSIS (makensis), если его нет
         shell: pwsh
         run: |
+          # $GITHUB_PATH подхватывается только СЛЕДУЮЩИМИ шагами, поэтому здесь же
+          # обновляем PATH текущего процесса — иначе makensis -VERSION ниже падает
+          # («not recognized»). Отдельно пишем в $GITHUB_PATH: его унаследует
+          # build-installer.sh (shell: bash) на следующем шаге.
+          $nsisDir = "${env:ProgramFiles(x86)}\NSIS"
           if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
             choco install nsis -y --no-progress
-            "$env:ProgramFiles(x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            $nsisDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
-          makensis -VERSION
+          $env:Path = "$nsisDir;$env:Path"
+          & "$nsisDir\makensis.exe" -VERSION
 
       # Сборку установщика ведёт build-installer.sh (shell: bash = Git Bash на
       # раннере). Пути sidecar передаём явно; WITH_MODEL=0 — модели в репе нет
