@@ -208,7 +208,10 @@ fn main() -> wry::Result<()> {
                             .with_tooltip("voiceog — локальный голосовой ввод")
                             .with_icon(make_icon(64))
                             .with_menu(Box::new(menu))
-                            .with_menu_on_left_click(true)
+                            // Linux: меню на левый клик (как было). Windows:
+                            // меню — по правому, а левый шлёт TrayIconEvent::Click
+                            // → toggle_window (обработчик ниже).
+                            .with_menu_on_left_click(cfg!(unix))
                             .build()
                             .unwrap(),
                     );

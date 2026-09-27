@@ -1,6 +1,6 @@
 [package]
 name = "voiceog-window"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Нативное окно-пульт VOICEog (tao + wry + tray-icon)"
 license = "MIT"
@@ -27,6 +27,12 @@ zbus = "5.18"
 # решает сам tao.
 [target.'cfg(unix)'.dependencies]
 gtk = "0.18"
+
+# windows-sys — напрямую для single-instance на Windows: именованные mutex+event
+# (CreateMutexW/CreateEventW/WaitForSingleObject и т.п.). Версия 0.61 совпадает с
+# той, что уже в дереве транзитом, — лишних копий не появится.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 # --- cargo-deb: метаданные .deb-пакета (Debian/Ubuntu) ---
 # Сборка: cargo deb  →  target/debian/*.deb

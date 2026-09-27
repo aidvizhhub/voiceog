@@ -127,7 +127,10 @@ log "собираю makensis..."
 
 mkdir -p "$(dirname "$OUT_FILE")"
 
+# -INPUTCHARSET UTF8 — страховка к маркеру в .nsi: без неё makensis берёт
+# системную ACP/OEM кодировку раннера (Windows) и русский текст становится кракозябрами.
 makensis -V3 \
+  -INPUTCHARSET UTF8 \
   -DAPP_VERSION="$APP_VERSION" \
   -DWIN_EXE="$(to_win "$WIN_EXE")" \
   -DNODE_EXE="$(to_win "$NODE_EXE")" \

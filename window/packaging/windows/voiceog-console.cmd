@@ -3,6 +3,7 @@ rem voiceog-console.cmd — запуск VOICEog с видимой консол�
 rem тут видно логи сервера, чего тихий launch.vbs не показывает.
 rem Обычный запуск — ярлык, он зовёт launch.vbs. Этот файл просто лежит рядом.
 setlocal
+chcp 65001 >nul
 cd /d "%~dp0"
 
 set "PATH=%~dp0server\node_modules\sherpa-onnx-win-x64;%PATH%"
