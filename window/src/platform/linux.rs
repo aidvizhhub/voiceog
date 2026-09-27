@@ -19,10 +19,17 @@ use wry::{WebView, WebViewBuilder, WebViewBuilderExtUnix};
 /// Логика:
 ///   1. `VOICEOG_DISABLE_DMABUF=1` — аварийная ручка. Наша сборка/драйвер
 ///      снова сломались — возвращаем старый проверенный CPU-режим.
-///   2. NVIDIA-proprietary + Wayland — включаем GPU: DMABUF on + обход
-///      explicit-sync.
-///   3. Все остальные (AMD/Intel/nouveau, X11) — ничего не трогаем: дефолты
-///      WebKit там и так рабочие, лезть со своими флагами только вредить.
+///   2. NVIDIA-proprietary — гоняем по-разному в зависимости от того, куда
+///      реально рисуем:
+///        • нативный Wayland — включаем GPU: DMABUF on + обход explicit-sync.
+///        • X11/XWayland — принудительный CPU. Тут DMABUF держится на GBM
+///          (Generic Buffer Management — механизм аллокации/шаринга GPU-буферов
+///          через DRM). Вебкит пробует собрать GBM-буфер, но связка
+///          XWayland + проприетарный NVIDIA его не тянет: `Failed to create GBM
+///          buffer of size ...`, и рендерер тихо валится обратно в CPU — то есть
+///          GPU нет, но лог срётся ошибками. Убираем иллюзию: сразу CPU.
+///   3. Не-NVIDIA (AMD/Intel/nouveau) — ничего не трогаем: дефолты WebKit там
+///      рабочие, лезть со своими флагами только вредить.
 ///
 /// Что задали снаружи (в env) — уважаем и не перетираем: юзер/дистрибутив
 /// всегда прав.
@@ -36,14 +43,33 @@ pub fn prepare_environment() {
         return;
     }
 
-    // 2. Проприетарный NVIDIA: модуль ядра nvidia + Wayland-сессия.
+    // 2. Проприетарный NVIDIA: модуль ядра nvidia.
     let nvidia_proprietary = std::path::Path::new("/sys/module/nvidia").exists();
-    let on_wayland = std::env::var("XDG_SESSION_TYPE")
-        .map(|v| v.eq_ignore_ascii_case("wayland"))
-        .unwrap_or(false)
-        || std::env::var_os("WAYLAND_DISPLAY").is_some();
+    if !nvidia_proprietary {
+        // 3. AMD/Intel/nouveau — ничего не трогаем, дефолты WebKit рабочие.
+        return;
+    }
 
-    if nvidia_proprietary && on_wayland {
+    // Куда рисуем: нативный Wayland или X11/XWayland.
+    // `GDK_BACKEND=x11` — принудительный X11-путь (в т.ч. XWayland под
+    // Wayland-сессией), смотрим по наличию подстроки, а не по точному равенству:
+    // там бывает "x11,wayland" через запятую.
+    let forced_x11 = std::env::var("GDK_BACKEND")
+        .map(|v| v.to_ascii_lowercase().contains("x11"))
+        .unwrap_or(false);
+
+    let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
+    let session_wayland = session_type.eq_ignore_ascii_case("wayland");
+    let session_x11 = session_type.eq_ignore_ascii_case("x11");
+    let has_wayland_display = std::env::var_os("WAYLAND_DISPLAY").is_some();
+
+    // Нативный Wayland: не форсим X11 и сессия Wayland (по XDG_SESSION_TYPE
+    // либо по WAYLAND_DISPLAY).
+    let native_wayland = !forced_x11 && (session_wayland || has_wayland_display);
+    // X11/XWayland: форсим X11 через GDK_BACKEND или сессия X11.
+    let on_x11 = forced_x11 || session_x11;
+
+    if native_wayland {
         if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
             // "0" — явно разрешаем DMABUF: рендер уедет на GPU.
             // SAFETY: до инициализации GTK/потоков — гонок нет.
@@ -58,7 +84,18 @@ pub fn prepare_environment() {
         return;
     }
 
-    // 3. AMD/Intel/nouveau/X11 — ничего не трогаем, дефолты WebKit рабочие.
+    if on_x11 {
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            // CPU-режим: на X11/XWayland + NVIDIA GBM-буфер не создаётся
+            // (`Failed to create GBM buffer ...`), DMABUF всё равно падает в
+            // CPU-фолбэк, только с вонью в stderr. Гасим его сразу.
+            // SAFETY: до инициализации GTK/потоков — гонок нет.
+            unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+        }
+        return;
+    }
+
+    // NVIDIA, но вид сессии не распознали — не гадаем, оставляем дефолты.
 }
 
 /// wry на Linux строится в GTK-контейнер окна tao (default_vbox).
