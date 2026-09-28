@@ -146,12 +146,25 @@ fn main() -> wry::Result<()> {
         let _ = proxy.send_event(UserEvent::Menu(e));
     }));
 
-    let window = WindowBuilder::new()
+    let builder = WindowBuilder::new()
         .with_title("voiceog")
         .with_inner_size(LogicalSize::new(1000.0, 800.0))
         .with_min_inner_size(LogicalSize::new(720.0, 560.0))
-        .build(&event_loop)
-        .unwrap();
+        // Иконка окна: та же «микрофон», что и в трее. На Windows это МАЛЕНЬКАЯ
+        // иконка (заголовок окна, IconType::Small); на Linux она запасная —
+        // рабочий стол и панель всё равно берут иконку из .desktop-файла.
+        .with_window_icon(Some(window_icon(64)));
+
+    // Windows: отдельно задаём БОЛЬШУЮ иконку (IconType::Big) — панель задач и
+    // Alt+Tab. Общий with_window_icon туда не достаёт, он ставит только Small.
+    // Импорт трейта — строго под cfg(windows), чтобы Linux/кросс-сборка не ломались.
+    #[cfg(windows)]
+    let builder = {
+        use tao::platform::windows::WindowBuilderExtWindows;
+        builder.with_taskbar_icon(Some(window_icon(256)))
+    };
+
+    let window = builder.build(&event_loop).unwrap();
 
     // Вебвью строится платформенно: на Linux — в GTK-контейнер окна tao,
     // на Windows — прямо в окно. Общая конфигурация — в make_webview.
@@ -245,9 +258,11 @@ fn main() -> wry::Result<()> {
     });
 }
 
-/// Иконка трея рисуется прямо в коде: микрофон цветом-акцентом VOICEog (#0070f3).
-/// Без внешних файлов — бинарь самодостаточный, и иконка не отвалится.
-fn make_icon(size: u32) -> Icon {
+/// Пиксели иконки-микрофона: RGBA-буфер `size×size`, цвет-акцент VOICEog (#0070f3).
+/// Рисуется прямо в коде — без внешних файлов: бинарь самодостаточный, иконка не
+/// отвалится. Один и тот же буфер уходит и в трей, и в окно — типы `Icon` у них
+/// разные, поэтому наружу отдаём просто RGBA.
+fn mic_rgba(size: u32) -> Vec<u8> {
     const SS: u32 = 4; // супер-сэмплинг: считаем 4×4 субпикселя — края гладкие
     let accent = (0u8, 112u8, 243u8); // #0070f3
     let mut rgba = Vec::with_capacity((size * size * 4) as usize);
@@ -292,7 +307,18 @@ fn make_icon(size: u32) -> Icon {
         }
     }
 
-    Icon::from_rgba(rgba, size, size).expect("иконка трея")
+    rgba
+}
+
+/// Иконка трея (`tray_icon::Icon`) — из того же буфера, что и иконка окна.
+fn make_icon(size: u32) -> Icon {
+    Icon::from_rgba(mic_rgba(size), size, size).expect("иконка трея")
+}
+
+/// Иконка окна (`tao::window::Icon`) — тот же микрофон. Отдельная обёртка,
+/// потому что `tray_icon::Icon` и `tao::window::Icon` — разные типы.
+fn window_icon(size: u32) -> tao::window::Icon {
+    tao::window::Icon::from_rgba(mic_rgba(size), size, size).expect("иконка окна")
 }
 
 /// Точка внутри «капсулы» — отрезок с закруглёнными концами. `w` — полная толщина.

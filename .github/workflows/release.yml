@@ -260,6 +260,22 @@ jobs:
         # упаковки. Лечится отдельно (/Brepro + -C link-arg), в этой правке не
         # трогаем — фиксируем как известное ограничение.
 
+      # Страж: exe без вшитых ресурсов (иконка/VERSIONINFO) роняет сборку.
+      # Смотрим ровно тот exe, что уедет в артефакты и в установщик.
+      - name: Проверить, что в exe вшиты ресурсы (иконка/версия)
+        shell: pwsh
+        run: |
+          # build.rs (embed-resource) вшивает VERSIONINFO + иконку. Он в «мягком»
+          # режиме: нет компилятора ресурсов → сборка пройдёт БЕЗ ресурсов и
+          # молча выкатит exe без иконки. Поэтому проверяем явно.
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'window\target\release\voiceog-window.exe'
+          if (-not (Test-Path $exe)) { throw "нет exe: $exe" }
+          $vi = (Get-Item $exe).VersionInfo
+          if ($vi.ProductName -ne 'VOICEog') {
+            throw "в exe нет вшитых ресурсов (ProductName='$($vi.ProductName)') — иконка/версия не вшились"
+          }
+          Write-Host "ресурсы на месте: ProductName=$($vi.ProductName) FileVersion=$($vi.FileVersion)"
+
       - name: Поставить NSIS (makensis), если его нет
         shell: pwsh
         run: |
